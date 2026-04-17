@@ -1,0 +1,53 @@
+{
+  "name": "@thinkfleet/agentmark",
+  "version": "0.1.0",
+  "description": "Reference implementation of the agentmark spec — convert any web page into an AI-friendly Markdown representation. Spec: docs/specs/agentmark-v0.1.md",
+  "type": "commonjs",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ThinkfleetAI/agentmark.git"
+  },
+  "homepage": "https://agentmark.dev",
+  "keywords": [
+    "agentmark",
+    "ai",
+    "agents",
+    "browser",
+    "markdown",
+    "playwright",
+    "llm",
+    "wire-format"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.lib.json && cp package.json dist/ && cp -R schema dist/",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "tslib": "2.6.2"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": false }
+  },
+  "devDependencies": {
+    "vitest": "3.0.8",
+    "@types/node": "20.19.9",
+    "@types/js-yaml": "4.0.9"
+  }
+}

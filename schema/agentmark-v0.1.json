@@ -1,0 +1,122 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://agentmark.dev/schema/v0.1.json",
+    "title": "agentmark v0.1 frontmatter",
+    "type": "object",
+    "required": ["agentmark", "url", "title"],
+    "properties": {
+        "agentmark": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$" },
+        "url": { "type": "string", "format": "uri" },
+        "title": { "type": "string", "maxLength": 512 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "source": { "enum": ["rendered", "declared", "hybrid"] },
+        "language": { "type": "string" },
+        "direction": { "enum": ["ltr", "rtl"] },
+        "state": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "loading": { "type": "boolean" },
+                "auth": { "enum": ["logged_in", "logged_out", "unknown"] },
+                "error": { "type": ["string", "null"] },
+                "empty": { "type": "boolean" },
+                "ssl": { "enum": ["valid", "invalid", "mixed", "none"] },
+                "modal_open": { "type": "boolean" },
+                "active_tab": { "type": ["string", "null"] },
+                "active_step": { "type": ["string", "null"] }
+            }
+        },
+        "actions": {
+            "type": "object",
+            "patternProperties": {
+                "^[a-z][a-z0-9_]{0,63}$": { "$ref": "#/$defs/action" }
+            },
+            "additionalProperties": false
+        },
+        "media": {
+            "type": "object",
+            "patternProperties": {
+                "^[a-z][a-z0-9_]{0,63}$": { "$ref": "#/$defs/media" }
+            },
+            "additionalProperties": false
+        },
+        "memory": { "type": "object" },
+        "capabilities": { "type": "object" },
+        "cookies": { "type": "object" },
+        "permissions": { "type": "object" }
+    },
+    "patternProperties": {
+        "^x-": {}
+    },
+    "$defs": {
+        "action": {
+            "type": "object",
+            "required": ["type", "label"],
+            "properties": {
+                "type": {
+                    "enum": [
+                        "click", "type", "check", "select", "multi_select",
+                        "nav", "submit", "upload",
+                        "date", "time", "datetime",
+                        "range", "color", "key",
+                        "hover", "scroll_to", "drag"
+                    ]
+                },
+                "label": { "type": "string", "maxLength": 256 },
+                "description": { "type": "string", "maxLength": 1024 },
+                "disabled": { "type": "boolean" },
+                "disabled_reason": { "type": "string" },
+                "required": { "type": "boolean" },
+                "read_only": { "type": "boolean" },
+                "validation": { "type": "string" },
+                "value": {},
+                "placeholder": { "type": "string" },
+                "options": { "type": "array" },
+                "min": { "type": "number" },
+                "max": { "type": "number" },
+                "step": { "type": "number" },
+                "target": { "type": "string" },
+                "target_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+                "cost": { "enum": ["free", "destructive", "financial"] },
+                "confirms": { "type": "boolean" },
+                "auth_required": { "type": "string" },
+                "precondition_ids": {
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+                },
+                "aria": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "expanded": { "type": "boolean" },
+                        "pressed": { "type": "boolean" },
+                        "checked": { "oneOf": [{ "type": "boolean" }, { "const": "mixed" }] },
+                        "selected": { "type": "boolean" },
+                        "disabled": { "type": "boolean" }
+                    }
+                },
+                "region_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+                "idempotent": { "type": "boolean" },
+                "honeypot": { "type": "boolean" }
+            }
+        },
+        "media": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+                "type": { "enum": ["image", "video", "audio"] },
+                "alt": { "type": "string" },
+                "caption": { "type": ["string", "null"] },
+                "preview_url": { "type": "string", "format": "uri" },
+                "preview_token": { "type": ["string", "null"] },
+                "text_extract": { "type": ["string", "null"] },
+                "ocr_available": { "type": "boolean" },
+                "transcript_available": { "type": "boolean" },
+                "width": { "type": "integer" },
+                "height": { "type": "integer" },
+                "bytes": { "type": ["string", "null"] }
+            }
+        }
+    }
+}
