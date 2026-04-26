@@ -49,6 +49,7 @@
     "vitest": "3.0.8",
     "@types/node": "20.19.9",
     "@types/js-yaml": "4.0.9",
-    "playwright-core": "^1.40.0"
+    "playwright-core": "^1.40.0",
+    "typescript": "^5.4.0"
   }
 }
