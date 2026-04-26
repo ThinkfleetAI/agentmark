@@ -70,4 +70,66 @@ describe('buildBody', () => {
         const body = buildBody(segs)
         expect(body).toBe(body.trim())
     })
+
+    describe('tables', () => {
+        it('renders a basic table with headers as GFM markdown', () => {
+            const segs: BodySegment[] = [
+                {
+                    kind: 'table',
+                    headers: ['Name', 'Price'],
+                    rows: [
+                        ['Free', '$0/mo'],
+                        ['Pro', '$29/mo'],
+                    ],
+                },
+            ]
+            const body = buildBody(segs)
+            expect(body).toContain('| Name | Price |')
+            expect(body).toContain('|---|---|')
+            expect(body).toContain('| Free | $0/mo |')
+            expect(body).toContain('| Pro | $29/mo |')
+        })
+
+        it('synthesizes Col N headers when no headers provided', () => {
+            const segs: BodySegment[] = [
+                { kind: 'table', rows: [['a', 'b'], ['c', 'd']] },
+            ]
+            const body = buildBody(segs)
+            expect(body).toContain('| Col 1 | Col 2 |')
+        })
+
+        it('renders an optional caption above the table', () => {
+            const segs: BodySegment[] = [
+                {
+                    kind: 'table',
+                    caption: 'Pricing tiers',
+                    headers: ['Tier'],
+                    rows: [['Free']],
+                },
+            ]
+            const body = buildBody(segs)
+            expect(body).toContain('**Pricing tiers**')
+        })
+
+        it('escapes pipe characters and newlines inside cells', () => {
+            const segs: BodySegment[] = [
+                {
+                    kind: 'table',
+                    headers: ['Note'],
+                    rows: [['has|pipe'], ['has\nnewline']],
+                },
+            ]
+            const body = buildBody(segs)
+            expect(body).toContain('| has\\|pipe |')
+            expect(body).toContain('| has newline |')
+        })
+
+        it('pads short rows to the column count', () => {
+            const segs: BodySegment[] = [
+                { kind: 'table', headers: ['a', 'b', 'c'], rows: [['x']] },
+            ]
+            const body = buildBody(segs)
+            expect(body).toContain('| x |  |  |')
+        })
+    })
 })

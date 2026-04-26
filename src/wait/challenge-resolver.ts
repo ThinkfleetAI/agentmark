@@ -15,7 +15,7 @@
  * In most cases, clicking the checkbox in a non-headless session passes.
  */
 
-import type { Page, Frame } from 'playwright'
+import type { Page, Frame } from 'playwright-core'
 
 export interface ChallengeResolverOptions {
     /** Max time to wait for JS challenges to self-resolve. Default: 10000ms */

@@ -1,4 +1,4 @@
-import type { Page } from 'playwright'
+import type { Page } from 'playwright-core'
 import { AGENTMARK_VERSION, type Snapshot, type ConversionResult, type ActionDefinition, type MediaDefinition } from './types'
 import { EXTRACTOR_SCRIPT, type RawExtraction, type RawAction } from './extractors/dom-extractor'
 import { buildBody } from './extractors/body-builder'

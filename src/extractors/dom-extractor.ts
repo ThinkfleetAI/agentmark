@@ -63,6 +63,7 @@ export type BodySegment =
     | { kind: 'list'; ordered: boolean; items: string[] }
     | { kind: 'tag'; tag: string; ref?: string }
     | { kind: 'separator' }
+    | { kind: 'table'; headers?: string[]; rows: string[][]; caption?: string }
 
 /**
  * The browser-side extractor function, as a string. We pass this to
@@ -293,6 +294,107 @@ export const EXTRACTOR_SCRIPT = `
         segments.push({ kind: 'tag', tag: tag, ref: ref });
     }
 
+    function cellText(td) {
+        // Skip nested actions: cells often contain links/buttons whose
+        // accessible name is captured separately as actions. Text-only
+        // cell content is what the LLM needs to read tabular data.
+        return (td.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 512);
+    }
+
+    function emitTable(table) {
+        // Caption: <caption> or aria-label.
+        var caption;
+        var captionEl = table.querySelector(':scope > caption');
+        if (captionEl && captionEl.textContent) {
+            caption = captionEl.textContent.trim().slice(0, 256);
+        } else if (table.getAttribute('aria-label')) {
+            caption = (table.getAttribute('aria-label') || '').slice(0, 256);
+        }
+
+        // Headers: prefer <thead><tr><th>, fallback to first row if it's
+        // all <th>, else no headers.
+        var headers;
+        var theadRow = table.querySelector(':scope > thead > tr');
+        if (theadRow) {
+            var hCells = Array.from(theadRow.querySelectorAll(':scope > th, :scope > td'));
+            if (hCells.length > 0) {
+                headers = hCells.map(cellText);
+            }
+        }
+
+        // Body rows: tbody > tr if present; otherwise direct tr children.
+        // Cap at 200 rows + 30 cols to keep snapshot size sane on huge tables.
+        var bodyRows = table.querySelectorAll(':scope > tbody > tr');
+        if (bodyRows.length === 0) {
+            bodyRows = table.querySelectorAll(':scope > tr');
+        }
+        var rowList = Array.from(bodyRows).slice(0, 200);
+
+        // If we don't have explicit headers AND the first row is all <th>,
+        // promote it to headers and skip it from body rows.
+        if (!headers && rowList.length > 0) {
+            var firstRowCells = Array.from(rowList[0].children);
+            var allTh = firstRowCells.length > 0 &&
+                firstRowCells.every(function(c) { return c.tagName === 'TH'; });
+            if (allTh) {
+                headers = firstRowCells.map(cellText);
+                rowList = rowList.slice(1);
+            }
+        }
+
+        var rows = rowList.map(function(tr) {
+            return Array.from(tr.querySelectorAll(':scope > td, :scope > th'))
+                .slice(0, 30)
+                .map(cellText);
+        }).filter(function(row) {
+            return row.some(function(c) { return c.length > 0; });
+        });
+
+        if (rows.length === 0 && !headers) return;
+        var seg = { kind: 'table', rows: rows };
+        if (headers) seg.headers = headers;
+        if (caption) seg.caption = caption;
+        segments.push(seg);
+    }
+
+    function emitIframe(el) {
+        var src = el.getAttribute('src') || '';
+        var title = el.getAttribute('title') || el.getAttribute('aria-label') || '';
+        var id = nextId('frame');
+        // Treat iframes like media for the binding/registry — the
+        // host can later resolve them into action targets via Frame
+        // dispatch in the runner.
+        media[id] = {
+            type: 'image',  // best fit in current type vocab; spec extension TBD
+            alt: title || src.slice(0, 200),
+            preview_url: src || undefined,
+        };
+        // Attempt same-origin walk. cross-origin throws SecurityError
+        // and we fall through to emitting just the tag reference.
+        var inlineWalked = false;
+        try {
+            if (el.contentDocument && el.contentDocument.body) {
+                var doc = el.contentDocument;
+                emitTag('IFRAME_OPEN', id);
+                if (title) emitParagraph('Iframe: ' + title);
+                else if (src) emitParagraph('Iframe: ' + src);
+                for (var c of Array.from(doc.body.children)) {
+                    processNode(c);
+                }
+                emitTag('IFRAME_CLOSE', id);
+                inlineWalked = true;
+            }
+        }
+        catch (_e) {
+            // Cross-origin — script can't pierce. Fall through.
+        }
+        if (!inlineWalked) {
+            emitTag('IFRAME', id);
+            if (title) emitParagraph('Cross-origin iframe: ' + title + (src ? ' (' + src + ')' : ''));
+            else if (src) emitParagraph('Cross-origin iframe: ' + src);
+        }
+    }
+
     if (cookieBannerActionId) {
         emitTag('ACTION', cookieBannerActionId);
     }
@@ -310,6 +412,21 @@ export const EXTRACTOR_SCRIPT = `
 
         // Skip invisible, scripts, styles, etc.
         if (['script', 'style', 'noscript', 'template', 'svg'].includes(tag)) return;
+
+        // Shadow DOM piercing. Modern web components (Salesforce
+        // Lightning, MS 365, every-Lit-app, custom elements) hide
+        // their interactive content behind a shadow root. Without
+        // piercing them the LLM sees an empty <my-button> with no
+        // text or actions. We only get OPEN shadow roots — closed
+        // ones are intentionally inaccessible to scripts (browser
+        // limitation, not fixable). Process before tag-specific
+        // handling so shadow content gets an action ID even if the
+        // host element is also tagged.
+        if (el.shadowRoot) {
+            for (const sChild of Array.from(el.shadowRoot.children)) {
+                processNode(sChild);
+            }
+        }
 
         // Headings
         if (/^h[1-6]$/.test(tag)) {
@@ -397,6 +514,30 @@ export const EXTRACTOR_SCRIPT = `
 
             actions[id] = action;
             if (!honeypot) emitTag('INPUT', id);
+            return;
+        }
+
+        // Iframes. Two strategies:
+        //   1. Same-origin: walk contentDocument.body inline so the LLM
+        //      sees iframe content as if part of the parent page.
+        //      Many embedded forms / docs / maps fit this case.
+        //   2. Cross-origin: contentDocument access throws; fall back
+        //      to emitting an IFRAME tag with the src URL so the LLM
+        //      at least knows the iframe is there. Clicking elements
+        //      inside cross-origin iframes requires runner-side
+        //      frame-aware dispatch — a separate change.
+        if (tag === 'iframe' || tag === 'frame') {
+            emitIframe(el);
+            return;
+        }
+
+        // Tables — extract structurally so the LLM sees a real markdown
+        // table instead of a flat sequence of cell text. This is the
+        // key win for data-extraction tasks (pricing pages, comparison
+        // matrices, dashboards). Uses table headers (thead or first row
+        // of th cells) as column labels when present.
+        if (tag === 'table') {
+            emitTable(el);
             return;
         }
 

@@ -1,6 +1,6 @@
 {
   "name": "@thinkfleet/agentmark",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reference implementation of the agentmark spec — convert any web page into an AI-friendly Markdown representation. Spec: docs/specs/agentmark-v0.1.md",
   "type": "commonjs",
   "main": "./dist/src/index.js",
@@ -40,14 +40,16 @@
     "tslib": "2.6.2"
   },
   "peerDependencies": {
-    "playwright": ">=1.40.0"
+    "playwright-core": ">=1.40.0"
   },
   "peerDependenciesMeta": {
-    "playwright": { "optional": false }
+    "playwright-core": { "optional": false }
   },
   "devDependencies": {
     "vitest": "3.0.8",
     "@types/node": "20.19.9",
-    "@types/js-yaml": "4.0.9"
+    "@types/js-yaml": "4.0.9",
+    "playwright-core": "^1.40.0",
+    "typescript": "^5.4.0"
   }
 }
