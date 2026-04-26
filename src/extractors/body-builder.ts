@@ -46,6 +46,36 @@ export function buildBody(segments: BodySegment[]): string {
                 lastWasBlock = true
                 break
             }
+            case 'table': {
+                if (lines.length > 0 && !lastWasBlock) lines.push('')
+                if (seg.caption) {
+                    lines.push('**' + escapeBodyText(seg.caption) + '**')
+                    lines.push('')
+                }
+                // Determine column count from headers OR widest row.
+                const colCount = seg.headers
+                    ? seg.headers.length
+                    : seg.rows.reduce((max, row) => Math.max(max, row.length), 0)
+                if (colCount > 0) {
+                    const headers =
+                        seg.headers ?? Array.from({ length: colCount }, (_, i) => `Col ${i + 1}`)
+                    // GFM table: pipe-delimited cells with a `---` separator row.
+                    // Pipes inside cells must be escaped (GFM-standard); newlines
+                    // become spaces so each cell stays on one line.
+                    const fmt = (v: string): string =>
+                        escapeBodyText(v).replace(/\|/g, '\\|').replace(/\n/g, ' ')
+                    lines.push('| ' + headers.map(fmt).join(' | ') + ' |')
+                    lines.push('|' + headers.map(() => '---').join('|') + '|')
+                    for (const row of seg.rows) {
+                        const padded = [...row]
+                        while (padded.length < colCount) padded.push('')
+                        lines.push('| ' + padded.slice(0, colCount).map(fmt).join(' | ') + ' |')
+                    }
+                }
+                lines.push('')
+                lastWasBlock = true
+                break
+            }
         }
     }
 
