@@ -1,4 +1,4 @@
-import type { Page } from 'playwright'
+import type { Page } from 'playwright-core'
 
 export type WaitMode = 'fast' | 'smart' | 'aggressive'
 
@@ -30,6 +30,15 @@ export async function waitForPageReady(page: Page, options: WaitOptions = {}): P
     // Always wait at least for domcontentloaded
     await page.waitForLoadState('domcontentloaded', { timeout: maxWaitMs }).catch(() => {})
 
+    // domcontentloaded fires before `document.body` is attached on
+    // some navigations (especially mid-flight redirects + frames).
+    // Wait for body to actually exist — otherwise the extractor will
+    // crash on `document.body.children`. Cheap check, ~10ms typical.
+    const remainingForBody = Math.max(500, maxWaitMs - (Date.now() - startedAt))
+    await page
+        .waitForFunction(() => document.body !== null, { timeout: remainingForBody })
+        .catch(() => {})
+
     if (mode === 'fast') return
 
     // Smart + Aggressive: wait for network idle, then DOM mutation stability
@@ -40,8 +49,10 @@ export async function waitForPageReady(page: Page, options: WaitOptions = {}): P
     await waitForMutationStability(page, stabilityMs, remainingForMutations)
 
     if (mode === 'aggressive') {
-        // Trigger lazy loads: scroll to bottom, wait for stability again
-        await page.evaluate(`window.scrollTo(0, document.body.scrollHeight)`).catch(() => {})
+        // Trigger lazy loads: scroll to bottom, wait for stability again.
+        // Body-existence guarded — same null-safety story as the
+        // mutation observer.
+        await page.evaluate(`document.body && window.scrollTo(0, document.body.scrollHeight)`).catch(() => {})
         const remainingForLazyLoad = Math.max(stabilityMs * 2, maxWaitMs - (Date.now() - startedAt))
         await waitForMutationStability(page, stabilityMs, remainingForLazyLoad)
         await page.evaluate(`window.scrollTo(0, 0)`).catch(() => {})
@@ -57,6 +68,12 @@ async function waitForMutationStability(page: Page, stabilityMs: number, maxWait
 
     const script = `
         new Promise(resolve => {
+            // Defensive: if body still isn't here, resolve immediately
+            // — caller already gave up the maxWait budget.
+            if (!document.body) {
+                resolve(false);
+                return;
+            }
             let lastMutation = Date.now();
             const observer = new MutationObserver(() => { lastMutation = Date.now(); });
             observer.observe(document.body, {

@@ -438,15 +438,24 @@ export const EXTRACTOR_SCRIPT = `
         }
     }
 
-    for (const child of Array.from(document.body.children)) {
-        processNode(child);
+    // Defensive: document.body is null mid-navigation (between
+    // domcontentloaded firing and the new body being attached). The
+    // wait-strategy module is supposed to prevent this, but transient
+    // races slip through on some sites - graceful empty result beats
+    // crashing with "Cannot read properties of null".
+    if (document.body) {
+        for (const child of Array.from(document.body.children)) {
+            processNode(child);
+        }
     }
 
     return {
         title: document.title,
         url: location.href,
-        language: document.documentElement.lang || null,
-        direction: getComputedStyle(document.documentElement).direction || 'ltr',
+        language: document.documentElement?.lang || null,
+        direction: document.documentElement
+            ? getComputedStyle(document.documentElement).direction || 'ltr'
+            : 'ltr',
         state: {
             loading: document.readyState !== 'complete',
             modal_open: !!document.querySelector('[role="dialog"][aria-modal="true"]'),
