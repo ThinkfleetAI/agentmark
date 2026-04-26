@@ -1,6 +1,6 @@
 {
   "name": "@thinkfleet/agentmark",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reference implementation of the agentmark spec — convert any web page into an AI-friendly Markdown representation. Spec: docs/specs/agentmark-v0.1.md",
   "type": "commonjs",
   "main": "./dist/src/index.js",
