@@ -17,7 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm ci
+      # `npm install` instead of `npm ci` — works around npm bug
+      # https://github.com/npm/cli/issues/4828 where lockfiles
+      # generated on one OS omit the optional platform-specific
+      # binaries another OS needs (rollup native bindings, etc).
+      # Reproducibility is slightly worse but cross-platform CI works.
+      - run: npm install --no-audit --no-fund
       - run: npm run build
       - run: npm test
 
@@ -34,7 +39,12 @@ jobs:
         with:
           node-version: 20
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
+      # `npm install` instead of `npm ci` — works around npm bug
+      # https://github.com/npm/cli/issues/4828 where lockfiles
+      # generated on one OS omit the optional platform-specific
+      # binaries another OS needs (rollup native bindings, etc).
+      # Reproducibility is slightly worse but cross-platform CI works.
+      - run: npm install --no-audit --no-fund
       - run: npm run build
       - run: npm publish --provenance --access public
         env:
