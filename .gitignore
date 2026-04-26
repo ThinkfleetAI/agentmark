@@ -1,4 +1,16 @@
+# npm — we don't commit a lockfile for this library because:
+#   1. We publish to npm; downstream consumers resolve their own deps
+#   2. Cross-platform optional native deps (rollup, esbuild, swc bindings)
+#      get omitted from the lockfile when generated on one OS, breaking
+#      install on others — known npm bug:
+#      https://github.com/npm/cli/issues/4828
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 dist/
-*.tsbuildinfo
 .DS_Store
+*.log
+.env
+.env.local
