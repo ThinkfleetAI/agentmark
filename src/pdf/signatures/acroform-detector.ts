@@ -12,7 +12,7 @@
  */
 
 import { extractAcroForm } from '../forms/acroform-extractor'
-import { inferRoleFromFieldName } from './role-inference'
+import { inferRoleFromFieldName, inferRoleFromNearbyText } from './role-inference'
 import type {
     DetectedSignature,
     SignatureDetector,
@@ -40,7 +40,32 @@ export class AcroFormSignatureDetector implements SignatureDetector {
                 typeof field.value === 'string' && field.value.length > 0
             const kind = valuePresent ? 'widget_visible_signed' : 'widget_unsigned'
 
-            const inferred_role = inferRoleFromFieldName(field.fieldName)
+            // Three-tier role inference. Field name is fastest + most reliable
+            // when the name has semantic meaning ("client_signature"); fall
+            // back to label, then to nearby text. The third tier catches
+            // form-builder-generated random IDs (HelloSign, etc.).
+            let inferred_role = inferRoleFromFieldName(field.fieldName)
+            let role_source = inferred_role ? 'field name' : ''
+            if (!inferred_role) {
+                const labelRole = inferRoleFromFieldName(field.label)
+                if (labelRole) {
+                    inferred_role = labelRole
+                    role_source = 'label'
+                }
+            }
+            let nearbySnippet: string | undefined
+            if (!inferred_role && field.rect) {
+                const nearby = inferRoleFromNearbyText(input.extracted, {
+                    page: field.page,
+                    rect: field.rect,
+                })
+                if (nearby) {
+                    inferred_role = nearby.role
+                    nearbySnippet = nearby.snippet
+                    role_source = 'nearby text'
+                }
+            }
+
             const confidence = valuePresent
                 ? inferred_role ? 0.9 : 0.7
                 : inferred_role ? 0.85 : 0.6
@@ -54,8 +79,8 @@ export class AcroFormSignatureDetector implements SignatureDetector {
                 inferred_role,
                 confidence,
                 notes: inferred_role
-                    ? `Role inferred from field name: "${field.fieldName}"`
-                    : `Sig widget — field name "${field.fieldName}" did not match any role pattern`,
+                    ? `Role from ${role_source}${nearbySnippet ? `: "${nearbySnippet}"` : ` "${field.fieldName}"`}`
+                    : `Sig widget "${field.fieldName}" — no role pattern matched`,
             })
         }
         return detections

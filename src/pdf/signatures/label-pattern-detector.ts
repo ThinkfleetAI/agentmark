@@ -12,7 +12,7 @@
  */
 
 import { extractAcroForm } from '../forms/acroform-extractor'
-import { inferRoleFromFieldName } from './role-inference'
+import { inferRoleFromFieldName, inferRoleFromNearbyText } from './role-inference'
 import type {
     DetectedSignature,
     SignatureDetector,
@@ -41,9 +41,23 @@ export class LabelPatternSignatureDetector implements SignatureDetector {
             if (!SIGNATURE_LABEL_RE.test(haystack)) continue
 
             counter++
-            const inferred_role =
+            let inferred_role =
                 inferRoleFromFieldName(field.fieldName)
                 ?? inferRoleFromFieldName(field.label)
+            // Fall back to surrounding-text inference when neither name nor
+            // label contains a role keyword — covers form-builder-generated
+            // random IDs and labels like "Provide R Signature".
+            let nearbySnippet: string | undefined
+            if (!inferred_role && field.rect) {
+                const nearby = inferRoleFromNearbyText(input.extracted, {
+                    page: field.page,
+                    rect: field.rect,
+                })
+                if (nearby) {
+                    inferred_role = nearby.role
+                    nearbySnippet = nearby.snippet
+                }
+            }
 
             const valuePresent =
                 typeof field.value === 'string' && field.value.length > 0
@@ -66,7 +80,12 @@ export class LabelPatternSignatureDetector implements SignatureDetector {
                 confidence,
                 notes:
                     `Text-field-as-signature: name="${field.fieldName}", `
-                    + `label="${field.label}"${inferred_role ? `, role inferred from name/label` : ''}`,
+                    + `label="${field.label}"`
+                    + (inferred_role
+                        ? nearbySnippet
+                            ? `, role from nearby text: "${nearbySnippet}"`
+                            : `, role from field`
+                        : ''),
             })
         }
         return detections
