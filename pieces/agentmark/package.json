@@ -31,11 +31,11 @@
         "README.md"
     ],
     "dependencies": {
-        "@thinkfleet/agentmark": "file:../..",
+        "@thinkfleet/agentmark": "^0.11.0",
         "tslib": "^2.3.0",
         "undici": "^7.0.0"
     },
-    "_publishing_note": "@thinkfleet/agentmark is `file:../..` for in-monorepo development; bump to ^0.7.0 (or whatever version is on npm) before publishing this piece.",
+    "_dev_note": "Use `npm install file:../..` after cloning to develop locally against the monorepo source.",
     "peerDependencies": {
         "@activepieces/pieces-framework": ">=0.7.0",
         "playwright-core": ">=1.40.0"
