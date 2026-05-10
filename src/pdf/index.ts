@@ -57,6 +57,8 @@ export {
     defaultDetectors,
     AcroFormSignatureDetector,
     HeuristicImageSignatureDetector,
+    LabelPatternSignatureDetector,
+    VisionSignatureDetector,
     inferRoleFromFieldName,
     inferRoleFromNearbyText,
 } from './signatures'
@@ -67,4 +69,18 @@ export type {
     SignatureKind,
     SignatureRole,
     HeuristicImageDetectorOptions,
+    VisionSignatureDetectorOptions,
 } from './signatures'
+
+// ── v0.9: Vision backends (used by signatures + video frame captioning) ──
+export {
+    ClaudeVisionBackend,
+    OpenAiVisionBackend,
+} from './vision'
+export type {
+    VisionBackend,
+    AnalyzeOptions,
+    AnalyzeResult,
+    ClaudeVisionOptions,
+    OpenAiVisionOptions,
+} from './vision'

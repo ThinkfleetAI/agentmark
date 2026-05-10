@@ -33,6 +33,8 @@ export type {
     HeuristicImageDetectorOptions,
 } from './heuristic-image-detector'
 export { LabelPatternSignatureDetector } from './label-pattern-detector'
+export { VisionSignatureDetector } from './vision-detector'
+export type { VisionSignatureDetectorOptions } from './vision-detector'
 export {
     inferRoleFromFieldName,
     inferRoleFromNearbyText,

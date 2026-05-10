@@ -150,13 +150,15 @@ export type {
     SaveOptions,
 } from './pdf'
 
-// ── v0.8: Signature detection ────────────────────────────────────────────
+// ── v0.8 + v0.9: Signature detection (heuristic + vision) ────────────────
 
 export {
     detectSignatures,
     defaultDetectors,
     AcroFormSignatureDetector,
     HeuristicImageSignatureDetector,
+    LabelPatternSignatureDetector,
+    VisionSignatureDetector,
     inferRoleFromFieldName,
     inferRoleFromNearbyText,
 } from './pdf'
@@ -167,5 +169,20 @@ export type {
     SignatureKind,
     SignatureRole,
     HeuristicImageDetectorOptions,
+    VisionSignatureDetectorOptions,
 } from './pdf'
 export type { SignatureDescriptor } from './types'
+
+// ── v0.9: Vision backends ────────────────────────────────────────────────
+
+export {
+    ClaudeVisionBackend,
+    OpenAiVisionBackend,
+} from './pdf'
+export type {
+    VisionBackend,
+    AnalyzeOptions,
+    AnalyzeResult,
+    ClaudeVisionOptions,
+    OpenAiVisionOptions,
+} from './pdf'
