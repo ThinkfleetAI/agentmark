@@ -78,7 +78,11 @@ interface DocReport {
     suggestions: string[]
 }
 
-async function diagnose(filePath: string, ocr?: OcrPipelineOptions): Promise<DocReport> {
+async function diagnose(
+    filePath: string,
+    ocr?: OcrPipelineOptions,
+    snapshotDir?: string,
+): Promise<DocReport> {
     const flags: string[] = []
     const suggestions: string[] = []
 
@@ -196,6 +200,12 @@ async function diagnose(filePath: string, ocr?: OcrPipelineOptions): Promise<Doc
         validationErrors = result.errors.map((e) => `${e.path}: ${e.message}`)
         if (ocr && snap.document?.ocr_used) {
             flags.push('✅ OCR backend filled in the missing text')
+        }
+        // Optionally write the actual snapshot per-document for inspection.
+        if (snapshotDir) {
+            const safe = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_')
+            const outPath = path.join(snapshotDir, `${safe}.agentmark.md`)
+            await writeFile(outPath, agentmark, 'utf8')
         }
     } catch (err) {
         flags.push(`Full conversion failed: ${(err as Error).message}`)
@@ -487,18 +497,24 @@ async function main() {
     const args = process.argv.slice(2)
     if (args.length === 0) {
         console.error(
-            'Usage: npx tsx examples/diagnose-pdf.ts <pdf-or-dir> [--out report.md] [--ocr]',
+            'Usage: npx tsx examples/diagnose-pdf.ts <pdf-or-dir> [--out report.md] '
+            + '[--snapshots <dir>] [--ocr]',
         )
-        console.error('  --ocr  Enable Tesseract+Poppler OCR for pages with no extractable text')
+        console.error('  --out <file>         Write the markdown report to a file')
+        console.error('  --snapshots <dir>    Write each PDF\'s AgentMark snapshot to <dir>/<file>.agentmark.md')
+        console.error('  --ocr                Enable Tesseract+Poppler OCR on pages with no text')
         process.exit(1)
     }
 
     const outIdx = args.indexOf('--out')
     const outPath = outIdx >= 0 ? args[outIdx + 1] : undefined
+    const snapIdx = args.indexOf('--snapshots')
+    const snapshotDir = snapIdx >= 0 ? args[snapIdx + 1] : undefined
     const enableOcr = args.includes('--ocr')
     const inputs = args.filter((a, i) => {
-        if (a === '--out' || a === '--ocr') return false
+        if (a === '--out' || a === '--ocr' || a === '--snapshots') return false
         if (outIdx >= 0 && i === outIdx + 1) return false
+        if (snapIdx >= 0 && i === snapIdx + 1) return false
         return true
     })
 
@@ -508,6 +524,11 @@ async function main() {
     if (allFiles.length === 0) {
         console.error('No PDF files found.')
         process.exit(1)
+    }
+
+    if (snapshotDir) {
+        await import('node:fs/promises').then((fs) => fs.mkdir(snapshotDir, { recursive: true }))
+        console.error(`Writing per-doc AgentMark snapshots to: ${snapshotDir}`)
     }
 
     let ocr: OcrPipelineOptions | undefined
@@ -529,7 +550,7 @@ async function main() {
         for (const file of allFiles) {
             process.stderr.write(`  ${path.basename(file)}... `)
             try {
-                const r = await diagnose(file, ocr)
+                const r = await diagnose(file, ocr, snapshotDir)
                 reports.push(r)
                 const tag = r.parseError
                     ? '❌'
