@@ -109,7 +109,7 @@ export type {
     ConvertPdfOptions,
     ExtractPdfOptions,
     BuildPdfBodyOptions,
-    PdfDocument,
+    ExtractedPdf,
     PdfDocumentMeta,
     PdfPage,
     PdfTextItem,
@@ -135,4 +135,17 @@ export type {
     OcrPageOptions,
     OcrPageResult,
     OcrPipelineOptions,
+} from './pdf'
+
+// ── M3 / v0.6: AcroForm support (kind: 'form') ───────────────────────────
+
+export { extractAcroForm, PdfDocument, openPdfDocument } from './pdf'
+export type {
+    ExtractAcroFormOptions,
+    AcroFormExtraction,
+    AcroFormField,
+    AcroFormFieldKind,
+    OpenPdfDocumentOptions,
+    PdfDocumentSnapshot,
+    SaveOptions,
 } from './pdf'

@@ -1,5 +1,5 @@
 /**
- * Convert a structured PdfDocument into AgentMark `BodySegment[]` ready for
+ * Convert a structured ExtractedPdf into AgentMark `BodySegment[]` ready for
  * the existing serializer pipeline.
  *
  * The hard problem here is that PDFs have no semantic structure — only
@@ -17,7 +17,7 @@
  */
 
 import type { BodySegment } from '../extractors/dom-extractor'
-import type { PdfDocument, PdfPage, PdfTextItem } from './types'
+import type { ExtractedPdf, PdfPage, PdfTextItem } from './types'
 
 export interface BuildPdfBodyOptions {
     /** Multiplier on median font size above which text is promoted to a heading.
@@ -26,10 +26,10 @@ export interface BuildPdfBodyOptions {
 }
 
 /**
- * Top-level: convert a parsed PdfDocument to AgentMark body segments.
+ * Top-level: convert a parsed ExtractedPdf to AgentMark body segments.
  * Each page emits a `[PAGE:p_N]` tag followed by its text segments.
  */
-export function buildBodyFromPdf(doc: PdfDocument, opts: BuildPdfBodyOptions = {}): BodySegment[] {
+export function buildBodyFromPdf(doc: ExtractedPdf, opts: BuildPdfBodyOptions = {}): BodySegment[] {
     const headingThreshold = opts.headingThreshold ?? 1.3
     const allSizes = collectAllFontSizes(doc)
     const sortedDescending = [...allSizes].sort((a, b) => b - a)
@@ -281,7 +281,7 @@ function detectListItem(text: string): { ordered: boolean; text: string } | null
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
 
-function collectAllFontSizes(doc: PdfDocument): number[] {
+function collectAllFontSizes(doc: ExtractedPdf): number[] {
     const sizes: number[] = []
     for (const page of doc.pages) {
         for (const item of page.items) {

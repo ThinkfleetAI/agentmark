@@ -31,7 +31,12 @@ export interface PdfPage {
     items: PdfTextItem[]
 }
 
-export interface PdfDocument {
+/**
+ * The structured result of PDF text extraction. Renamed from `PdfDocument`
+ * in v0.6 to avoid collision with the public `PdfDocument` *class* (which
+ * wraps an `ExtractedPdf` plus mutation state for filling forms).
+ */
+export interface ExtractedPdf {
     pages: PdfPage[]
     metadata: PdfDocumentMeta
 }

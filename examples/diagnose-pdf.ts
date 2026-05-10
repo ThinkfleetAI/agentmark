@@ -28,7 +28,7 @@ import { parseSnapshot } from '../src/serializers/yaml-frontmatter'
 import { validateSnapshot } from '../src/validators/schema-validator'
 import { loadPdfjs } from '../src/pdf/pdfjs-loader'
 import { PopplerRenderBackend, TesseractOcrBackend } from '../src/pdf/ocr'
-import type { PdfDocument } from '../src/pdf/types'
+import type { ExtractedPdf } from '../src/pdf/types'
 import type { OcrPipelineOptions } from '../src/pdf/ocr'
 
 /**
@@ -96,7 +96,7 @@ async function diagnose(filePath: string, ocr?: OcrPipelineOptions): Promise<Doc
     const data = await readFile(filePath)
     const sourceUrl = pathToFileURL(path.resolve(filePath)).toString()
 
-    let extracted: PdfDocument
+    let extracted: ExtractedPdf
     try {
         extracted = await extractPdf({ data })
     } catch (err) {
@@ -257,7 +257,7 @@ async function diagnose(filePath: string, ocr?: OcrPipelineOptions): Promise<Doc
  */
 async function classifySourceMode(
     data: Uint8Array,
-    extracted: PdfDocument,
+    extracted: ExtractedPdf,
 ): Promise<{ sourceMode: SourceMode; producer?: string }> {
     const pdfjs = await loadPdfjs()
     const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)

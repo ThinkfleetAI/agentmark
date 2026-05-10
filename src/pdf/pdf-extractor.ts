@@ -7,7 +7,7 @@
 
 import { loadPdfjs } from './pdfjs-loader'
 import { SnapshotError } from '../errors'
-import type { PdfDocument, PdfPage, PdfTextItem } from './types'
+import type { ExtractedPdf, PdfPage, PdfTextItem } from './types'
 
 export interface ExtractPdfOptions {
     /** Raw PDF bytes (from `readFile`, `fetch`, etc.). */
@@ -16,7 +16,7 @@ export interface ExtractPdfOptions {
     password?: string
 }
 
-export async function extractPdf(opts: ExtractPdfOptions): Promise<PdfDocument> {
+export async function extractPdf(opts: ExtractPdfOptions): Promise<ExtractedPdf> {
     const pdfjs = await loadPdfjs()
 
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']>
@@ -105,7 +105,7 @@ interface PdfInfoFields {
 
 async function readMetadata(
     doc: Awaited<ReturnType<Awaited<ReturnType<typeof loadPdfjs>>['getDocument']>['promise']>,
-): Promise<Omit<PdfDocument['metadata'], 'pages'>> {
+): Promise<Omit<ExtractedPdf['metadata'], 'pages'>> {
     try {
         const m = await doc.getMetadata()
         const info = (m.info ?? {}) as PdfInfoFields

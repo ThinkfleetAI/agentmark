@@ -134,6 +134,58 @@ npm install pdfjs-dist@^4
 
 If `pdfjs-dist` is missing, `convertPdf()` throws a `SnapshotError` with install instructions. Heading detection uses font-size + bold-font-name heuristics (configurable via `headingThreshold`); bullet and ordered lists auto-detect.
 
+### Fillable PDF forms (v0.6+)
+
+When a PDF contains AcroForm fields (most fillable government and business forms), AgentMark sets `kind: 'form'` on the snapshot and exposes each field as an action. Use the stateful `PdfDocument` SDK class to fill and save:
+
+```ts
+import { openPdfDocument } from '@thinkfleet/agentmark'
+
+const data = await readFile('./vendor-application.pdf')
+const doc = await openPdfDocument({ data, sourceUrl: 'file:///vendor.pdf' })
+
+const snap = await doc.snapshot()
+console.log(snap.snapshot.kind)  // 'form'
+console.log(Object.keys(snap.snapshot.actions ?? {}))
+
+// Fill fields. Same execute() shape as the web Page SDK.
+await doc.execute('act_field_1', 'Acme Inc.')
+await doc.execute('act_field_2', true)            // checkbox
+await doc.execute('act_field_3', 'NC')            // dropdown
+await doc.execute('act_field_4', ['English', 'Spanish'])  // multi-select
+
+// Save the filled PDF as new bytes.
+const filled = await doc.save()
+await writeFile('./vendor-application-filled.pdf', filled)
+
+// Or flatten — bake values into the page content; no longer fillable.
+const flattened = await doc.save({ flatten: true })
+
+await doc.close()
+```
+
+Field handling:
+
+| AcroForm type | AgentMark action | Notes |
+|---|---|---|
+| Text (single + multi-line) | `type: 'type'` | Sensitive names auto-redacted (password, ssn, credit_card, etc.) |
+| Checkbox | `type: 'check'` | Boolean |
+| Radio group | `type: 'select'` | Options from PDF |
+| Dropdown | `type: 'select'` | Options from PDF |
+| Listbox (single / multi) | `type: 'select'` / `'multi_select'` | |
+| Signature | `type: 'click'` (disabled) | Refused — agents can't sign |
+| Push button | `type: 'click'` | |
+
+Required fields, read-only fields, and PDF field flags (read from page annotations) all surface in the resulting `ActionDefinition`.
+
+PDF form filling is opt-in via the optional peer dependency:
+
+```bash
+npm install pdf-lib
+```
+
+If `pdf-lib` is missing, `doc.save()` throws a `SnapshotError` with install instructions — `doc.snapshot()` and `doc.execute()` still work without it (fields are read via pdfjs-dist).
+
 ### OCR for scanned and "Print To PDF" documents (v0.5+)
 
 Many real-world PDFs have no extractable text — scanner output, "Microsoft Print To PDF" exports, etc. AgentMark ships pluggable OCR + render backends to handle these. Two of each are bundled; bring your own (AWS Textract, Google Document AI, Apple Vision Framework) by implementing the `OcrBackend` / `RenderBackend` interfaces.

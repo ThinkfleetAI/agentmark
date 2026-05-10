@@ -12,7 +12,7 @@ export type { ExtractPdfOptions } from './pdf-extractor'
 export { buildBodyFromPdf } from './body-builder'
 export type { BuildPdfBodyOptions } from './body-builder'
 export type {
-    PdfDocument,
+    ExtractedPdf,
     PdfDocumentMeta,
     PdfPage,
     PdfTextItem,
@@ -38,3 +38,15 @@ export type {
     OcrPageResult,
     OcrPipelineOptions,
 } from './ocr'
+
+// ── M3: AcroForm support (kind: 'form') ──────────────────────────────────
+export { extractAcroForm, PdfDocument, openPdfDocument } from './forms'
+export type {
+    ExtractAcroFormOptions,
+    AcroFormExtraction,
+    AcroFormField,
+    AcroFormFieldKind,
+    OpenPdfDocumentOptions,
+    PdfDocumentSnapshot,
+    SaveOptions,
+} from './forms'

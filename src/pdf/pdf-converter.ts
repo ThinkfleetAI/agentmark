@@ -16,9 +16,11 @@
 
 import {
     AGENTMARK_VERSION,
+    type ActionDefinition,
     type ConversionResult,
     type DocumentMeta,
     type Snapshot,
+    type SnapshotKind,
 } from '../types'
 import { buildBody } from '../extractors/body-builder'
 import { serializeSnapshot } from '../serializers/yaml-frontmatter'
@@ -30,7 +32,9 @@ import { SnapshotError } from '../errors'
 import type {
     OcrPipelineOptions,
 } from './ocr/types'
-import type { PdfDocument, PdfTextItem } from './types'
+import type { ExtractedPdf, PdfTextItem } from './types'
+import { extractAcroForm } from './forms/acroform-extractor'
+import type { AcroFormField } from './forms/types'
 
 export interface ConvertPdfOptions {
     /** Raw PDF bytes (from `readFile`, `fetch`, etc.). */
@@ -89,6 +93,14 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         ocrUsed = await applyOcr(extracted, options.data, options.ocr, logger)
     }
 
+    // Extract AcroForm fields (if any). PDFs with form fields get
+    // `kind: 'form'` and an `actions` map; otherwise `kind: 'document'`.
+    const acroform = await extractAcroForm({ data: options.data, password: options.password })
+        .catch((err: Error) => {
+            logger.warn('acroform.extract.failed', { error: err.message })
+            return { fields: [] as AcroFormField[], hasFields: false }
+        })
+
     const segments = buildBodyFromPdf(extracted, options.body ?? {})
     const body = buildBody(segments)
 
@@ -110,9 +122,16 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         ?? extracted.metadata.title
         ?? deriveTitleFromUrl(options.sourceUrl)
 
+    const kind: SnapshotKind = acroform.hasFields ? 'form' : 'document'
+
+    const actions: Record<string, ActionDefinition> = {}
+    for (const field of acroform.fields) {
+        actions[field.actionId] = field.action
+    }
+
     const snapshot: Snapshot = {
         agentmark: AGENTMARK_VERSION,
-        kind: 'document',
+        kind,
         url: options.sourceUrl,
         title,
         captured_at,
@@ -120,6 +139,7 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         source: 'declared',
         language: options.language,
         document: stripUndefined(documentMeta),
+        actions: acroform.hasFields ? actions : undefined,
         capabilities: {
             preview_media: false,
             expand_disclosures: false,
@@ -143,15 +163,21 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
 
     logger.info('snapshot.captured', {
         source: options.sourceUrl,
-        kind: 'document',
+        kind,
         pages: documentMeta.pages,
         segments: segments.length,
         bytes: text.length,
+        actions: Object.keys(actions).length,
     })
 
-    // PDFs have no interactive actions in this release (M3 will add AcroForm
-    // support and populate the binding). Return an empty binding for now.
-    return { agentmark: text, binding: new InMemoryActionBinding() }
+    // The binding maps each AcroForm action ID to the original PDF field
+    // name — that's what a future fillPdf() / Document.save() will look up
+    // when persisting changes back to the PDF.
+    const binding = new InMemoryActionBinding()
+    for (const field of acroform.fields) {
+        binding.set(field.actionId, field.fieldName)
+    }
+    return { agentmark: text, binding }
 }
 
 function deriveTitleFromUrl(url: string): string {
@@ -184,7 +210,7 @@ function stripUndefined<T extends object>(obj: T): T {
  * Returns true if OCR was actually applied to ≥1 page.
  */
 async function applyOcr(
-    doc: PdfDocument,
+    doc: ExtractedPdf,
     pdfData: Uint8Array | ArrayBuffer,
     options: OcrPipelineOptions,
     logger: Logger,

@@ -5,6 +5,75 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-05-10
+
+PDF form support. AcroForm fields become AgentMark actions; the new
+`PdfDocument` class lets agents fill, save, and flatten forms with the
+same `execute()` shape as the web `Page` SDK.
+
+### Added
+
+- **AcroForm extraction.** `convertPdf()` automatically reads AcroForm
+  fields and sets `kind: 'form'` on snapshots that have any. Fields
+  become `ActionDefinition`s with the correct AgentMark action types
+  (text → `type`, checkbox → `check`, radio/combo → `select`,
+  multi-list → `multi_select`, signature → disabled `click`).
+- **Field flag handling.** `Required` and `ReadOnly` flags are read from
+  page annotations (where pdfjs-dist surfaces them) since
+  `getFieldObjects()` doesn't expose them in v4+.
+- **Sensitive-name redaction.** Field names matching common patterns
+  (password, ssn, credit_card, cvv, account_num, token, secret, etc.)
+  get `(redacted)` labels and `undefined` values, mirroring the
+  password-field handling in the web extractor.
+- **Humanized labels.** `applicant.first_name` / `firstName` /
+  `first-name` all become `"First Name"` in the action's `label`.
+- **`PdfDocument` SDK class** + `openPdfDocument()` factory — stateful
+  wrapper that pairs the snapshot with field-fill state:
+  - `snapshot()` — capture current form state
+  - `execute(actionId, value)` — queue a field value
+  - `save({ flatten? })` — write a new PDF with all queued values
+    applied; `flatten: true` bakes values into page content
+  - `reset()` — discard queued values
+  - `close()` — release resources
+  - `fields`, `pending`, `snapshotCache` — read-only accessors
+- **Schema validation.** AgentMark IDs synthesized for AcroForm fields
+  match the spec regex `^[a-z][a-z0-9_]{0,63}$` regardless of how
+  irregular the source field names are.
+- **`pdf-lib` as optional peer dependency.** Reading + extracting fields
+  uses `pdfjs-dist`; writing fields back requires `pdf-lib`. Surface a
+  clean `SnapshotError` with install instructions if `pdf-lib` is
+  missing.
+
+### Changed
+
+- Internal type `PdfDocument` (the extraction-result interface) renamed
+  to `ExtractedPdf` to free `PdfDocument` for the public class. The
+  type was internal; no consumer code references it through the public
+  API.
+- `convertPdf()` now sets `kind: 'form'` (not `'document'`) when the
+  source PDF has AcroForm fields.
+- Action IDs for AcroForm fields are synthesized as `act_field_N` to
+  guarantee schema compliance — original field names are preserved in
+  the binding map for fill operations.
+
+### Tests
+
+- 12 new AcroForm extractor tests + 11 new `PdfDocument` round-trip
+  tests, all passing.
+- Total: 199 unit + 10 real-Chromium integration = 209 (was 188).
+- Round-trip coverage: text / checkbox / dropdown / multi-select listbox
+  all verified through fill → save → re-extract.
+
+### Known limitations
+
+- `pdfjs-dist`'s `getFieldObjects()` only reports the first selected
+  value of a multi-select listbox. The PDF saved by AgentMark contains
+  ALL selected values correctly (verified via direct pdf-lib reading);
+  it's only the snapshot that under-reports. No fix planned — wait for
+  pdfjs-dist upstream support.
+- Signature fields surface as disabled actions; AgentMark intentionally
+  refuses to fulfill them. Human review required.
+
 ## [0.5.0] — 2026-05-10
 
 OCR + render-backend support. Pages with no extractable text (scanner
@@ -201,6 +270,7 @@ Initial release of `@thinkfleet/agentmark`.
 - In-memory action binding
 - 90 tests, npm provenance auto-publish
 
+[0.6.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.3.0
