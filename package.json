@@ -1,7 +1,7 @@
 {
   "name": "@thinkfleet/agentmark",
-  "version": "0.7.0",
-  "description": "AI browser + document + form library + MCP server — convert any web page or PDF into a compact AgentMark snapshot, then drive it from any MCP client (Claude Desktop, Cursor, Claude Code) or directly via the SDK.",
+  "version": "0.11.0",
+  "description": "AI library for any AI-readable surface — web pages, PDFs (text/scanned/AcroForm), audio (transcribed), video (transcribed + frame-captioned), with signature detection. One compact wire format any AI client can read or drive via MCP.",
   "type": "commonjs",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

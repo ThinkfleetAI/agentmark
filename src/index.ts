@@ -199,3 +199,14 @@ export type {
     TranscribeOptions,
 } from './audio'
 export type { MediaMeta } from './types'
+
+// ── v0.11: Video support (kind: 'video') ─────────────────────────────────
+
+export { convertVideo, FfmpegFrameBackend } from './video'
+export type {
+    ConvertVideoOptions,
+    FfmpegFrameBackendOptions,
+    FrameExtractionBackend,
+    ExtractFramesOptions,
+    ExtractedFrame,
+} from './video'
