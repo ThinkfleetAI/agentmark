@@ -115,3 +115,24 @@ export type {
     PdfTextItem,
     PdfBlock,
 } from './pdf'
+
+// ── v0.5: OCR + render backends (Tesseract / Mistral / Poppler / pdfjs) ──
+
+export {
+    PopplerRenderBackend,
+    PdfjsRenderBackend,
+    TesseractOcrBackend,
+    MistralOcrBackend,
+} from './pdf'
+export type {
+    PopplerRenderOptions,
+    TesseractBackendOptions,
+    MistralOcrOptions,
+    RenderBackend,
+    RenderPageOptions,
+    RenderedPage,
+    OcrBackend,
+    OcrPageOptions,
+    OcrPageResult,
+    OcrPipelineOptions,
+} from './pdf'

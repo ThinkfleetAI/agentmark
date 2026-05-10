@@ -18,3 +18,23 @@ export type {
     PdfTextItem,
     PdfBlock,
 } from './types'
+
+// ── OCR + render-backend module ──────────────────────────────────────────
+export {
+    PopplerRenderBackend,
+    PdfjsRenderBackend,
+    TesseractOcrBackend,
+    MistralOcrBackend,
+} from './ocr'
+export type {
+    PopplerRenderOptions,
+    TesseractBackendOptions,
+    MistralOcrOptions,
+    RenderBackend,
+    RenderPageOptions,
+    RenderedPage,
+    OcrBackend,
+    OcrPageOptions,
+    OcrPageResult,
+    OcrPipelineOptions,
+} from './ocr'

@@ -27,6 +27,10 @@ import { buildBodyFromPdf, type BuildPdfBodyOptions } from './body-builder'
 import { InMemoryActionBinding } from '../binding/action-binding'
 import { noopLogger, type Logger } from '../observability/logger'
 import { SnapshotError } from '../errors'
+import type {
+    OcrPipelineOptions,
+} from './ocr/types'
+import type { PdfDocument, PdfTextItem } from './types'
 
 export interface ConvertPdfOptions {
     /** Raw PDF bytes (from `readFile`, `fetch`, etc.). */
@@ -49,6 +53,12 @@ export interface ConvertPdfOptions {
     vendorExtensions?: Record<string, unknown>
     /** Extra body-builder options. */
     body?: BuildPdfBodyOptions
+    /**
+     * OCR pipeline configuration. When provided, pages with no extractable
+     * text are rendered + OCR'd and the result is merged back into the
+     * PdfDocument before body-building.
+     */
+    ocr?: OcrPipelineOptions
 }
 
 /**
@@ -74,6 +84,11 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         throw new SnapshotError(`PDF extraction failed: ${(err as Error).message}`, err as Error)
     }
 
+    let ocrUsed = false
+    if (options.ocr && options.ocr.mode !== 'never') {
+        ocrUsed = await applyOcr(extracted, options.data, options.ocr, logger)
+    }
+
     const segments = buildBodyFromPdf(extracted, options.body ?? {})
     const body = buildBody(segments)
 
@@ -87,7 +102,7 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         modified_at: extracted.metadata.modified_at,
         format: 'pdf',
         format_version: extracted.metadata.pdf_version,
-        ocr_used: false,
+        ocr_used: ocrUsed,
     }
 
     const title =
@@ -155,4 +170,103 @@ function stripUndefined<T extends object>(obj: T): T {
         if (v !== undefined) out[k] = v
     }
     return out as T
+}
+
+/**
+ * Apply the OCR pipeline to the extracted document, mutating it in place
+ * with OCR'd text on pages that need it.
+ *
+ * Mode semantics:
+ *   - 'auto'   (default): OCR pages with no extractable text
+ *   - 'always':           OCR every page (overrides any extracted text)
+ *   - 'never':            no-op (caller should have skipped this fn)
+ *
+ * Returns true if OCR was actually applied to ≥1 page.
+ */
+async function applyOcr(
+    doc: PdfDocument,
+    pdfData: Uint8Array | ArrayBuffer,
+    options: OcrPipelineOptions,
+    logger: Logger,
+): Promise<boolean> {
+    const mode = options.mode ?? 'auto'
+    if (mode === 'never') return false
+
+    const dpi = options.dpi ?? 150
+    const language = options.language ?? 'eng'
+
+    const dataView = pdfData instanceof ArrayBuffer
+        ? new Uint8Array(pdfData)
+        : new Uint8Array(pdfData.buffer, pdfData.byteOffset, pdfData.byteLength)
+
+    let pagesProcessed = 0
+    try {
+        for (const page of doc.pages) {
+            const hasText = page.items.some((it) => it.text.trim().length > 0)
+            if (mode === 'auto' && hasText) continue
+
+            logger.debug('ocr.page.start', {
+                page: page.number,
+                render: options.render.name,
+                ocr: options.ocr.name,
+            })
+
+            const rendered = await options.render.renderPage(dataView, {
+                pageNumber: page.number,
+                dpi,
+                format: 'png',
+            })
+
+            const result = await options.ocr.extractPage(rendered.image, {
+                pageNumber: page.number,
+                language,
+                dpi,
+            })
+
+            // Replace items if OCR mode is 'always' or page had no text
+            // (mode === 'auto' && !hasText). Either way, we overwrite.
+            page.items = result.items?.length
+                ? result.items
+                : ocrTextToItems(result.text, page.height)
+
+            pagesProcessed++
+            logger.info('ocr.page.complete', {
+                page: page.number,
+                confidence: result.confidence,
+                items: page.items.length,
+            })
+        }
+    } finally {
+        // Best-effort cleanup of long-lived resources (Tesseract worker, etc.).
+        // Mocks may return undefined instead of a Promise, so wrap defensively.
+        try { await Promise.resolve(options.ocr.close?.()) } catch { /* ignore */ }
+        try { await Promise.resolve(options.render.close?.()) } catch { /* ignore */ }
+    }
+
+    return pagesProcessed > 0
+}
+
+/**
+ * Fallback when an OCR backend returns plain text without word-level
+ * positioning: synthesize a single text item per line so the body builder
+ * still produces paragraph-level output.
+ */
+function ocrTextToItems(text: string, pageHeight: number): PdfTextItem[] {
+    if (!text || !text.trim()) return []
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+    const items: PdfTextItem[] = []
+    const lineHeight = 12 // pt — approximate body-text size
+    for (let i = 0; i < lines.length; i++) {
+        const y = pageHeight - 50 - i * lineHeight
+        items.push({
+            text: lines[i].trim(),
+            fontSize: 11,
+            fontName: 'ocr',
+            x: 50,
+            y,
+            width: lines[i].length * 5.5,
+            hasEol: true,
+        })
+    }
+    return items
 }

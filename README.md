@@ -132,7 +132,48 @@ PDF support is opt-in via the optional peer dependency:
 npm install pdfjs-dist@^4
 ```
 
-If `pdfjs-dist` is missing, `convertPdf()` throws a `SnapshotError` with install instructions. Heading detection uses font-size heuristics (configurable via `headingThreshold`); bullet and ordered lists auto-detect. Tables and OCR for scanned PDFs ship in v0.5.
+If `pdfjs-dist` is missing, `convertPdf()` throws a `SnapshotError` with install instructions. Heading detection uses font-size + bold-font-name heuristics (configurable via `headingThreshold`); bullet and ordered lists auto-detect.
+
+### OCR for scanned and "Print To PDF" documents (v0.5+)
+
+Many real-world PDFs have no extractable text — scanner output, "Microsoft Print To PDF" exports, etc. AgentMark ships pluggable OCR + render backends to handle these. Two of each are bundled; bring your own (AWS Textract, Google Document AI, Apple Vision Framework) by implementing the `OcrBackend` / `RenderBackend` interfaces.
+
+```ts
+import {
+    convertPdf,
+    PopplerRenderBackend,
+    TesseractOcrBackend,
+} from '@thinkfleet/agentmark'
+
+const { agentmark } = await convertPdf({
+    data,
+    sourceUrl: 'file:///tmp/scanned.pdf',
+    ocr: {
+        render: new PopplerRenderBackend(),       // pdftoppm-based rasterization
+        ocr:    new TesseractOcrBackend(),        // in-process WASM OCR
+        mode: 'auto',  // OCR only pages with no extractable text (default)
+    },
+})
+```
+
+**Bundled render backends:**
+
+| Backend | Install | When to use |
+|---|---|---|
+| `PopplerRenderBackend` | `brew install poppler` (macOS) / `apt-get install poppler-utils` | Lightest. No native node modules. |
+| `PdfjsRenderBackend` | `npm install canvas` | Pure-Node, no system deps. Heavier install. |
+
+**Bundled OCR backends:**
+
+| Backend | Install | Cost | Quality |
+|---|---|---|---|
+| `TesseractOcrBackend` | `npm install tesseract.js@^5` | Free | Decent on clean text |
+| `MistralOcrBackend` | (none — uses `fetch`) | ~$1/1k pages | Excellent, layout-aware |
+
+OCR modes:
+- `'auto'` (default) — OCR only pages with no extractable text. Mixed text+image PDFs handled correctly.
+- `'always'` — OCR every page (overrides any extracted text).
+- `'never'` — disable OCR. Same as omitting `ocr` from `convertPdf`.
 
 ## Lower-level APIs
 

@@ -1,7 +1,7 @@
 {
   "name": "@thinkfleet/agentmark",
-  "version": "0.4.0",
-  "description": "AI browser + document library — convert any web page or PDF into a compact AgentMark snapshot, then drive it via clean primitives any AI can call.",
+  "version": "0.5.0",
+  "description": "AI browser + document library — convert any web page or PDF (text, scanned, or printed) into a compact AgentMark snapshot, then drive it via clean primitives any AI can call.",
   "type": "commonjs",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -41,13 +41,17 @@
   },
   "peerDependencies": {
     "pdfjs-dist": "^4.10.38",
-    "playwright-core": ">=1.40.0"
+    "playwright-core": ">=1.40.0",
+    "tesseract.js": "^5.1.1"
   },
   "peerDependenciesMeta": {
     "playwright-core": {
       "optional": false
     },
     "pdfjs-dist": {
+      "optional": true
+    },
+    "tesseract.js": {
       "optional": true
     }
   },
@@ -57,6 +61,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "playwright-core": "^1.40.0",
+    "tesseract.js": "^5.1.1",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0",
     "vitest": "3.0.8"

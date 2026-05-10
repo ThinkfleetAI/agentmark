@@ -27,7 +27,9 @@ import { convertPdf } from '../src/pdf/pdf-converter'
 import { parseSnapshot } from '../src/serializers/yaml-frontmatter'
 import { validateSnapshot } from '../src/validators/schema-validator'
 import { loadPdfjs } from '../src/pdf/pdfjs-loader'
+import { PopplerRenderBackend, TesseractOcrBackend } from '../src/pdf/ocr'
 import type { PdfDocument } from '../src/pdf/types'
+import type { OcrPipelineOptions } from '../src/pdf/ocr'
 
 /**
  * What kind of PDF did this start life as? Drives the suggestion text and
@@ -76,7 +78,7 @@ interface DocReport {
     suggestions: string[]
 }
 
-async function diagnose(filePath: string): Promise<DocReport> {
+async function diagnose(filePath: string, ocr?: OcrPipelineOptions): Promise<DocReport> {
     const flags: string[] = []
     const suggestions: string[] = []
 
@@ -181,17 +183,20 @@ async function diagnose(filePath: string): Promise<DocReport> {
         suggestions.push('Investigate body-builder line/paragraph clustering')
     }
 
-    // Full conversion
+    // Full conversion (with optional OCR)
     let bytes = 0
     let valid = false
     let validationErrors: string[] = []
     try {
-        const { agentmark } = await convertPdf({ data, sourceUrl })
+        const { agentmark } = await convertPdf({ data, sourceUrl, ocr })
         bytes = agentmark.length
         const snap = parseSnapshot(agentmark)
         const result = validateSnapshot(snap)
         valid = result.valid
         validationErrors = result.errors.map((e) => `${e.path}: ${e.message}`)
+        if (ocr && snap.document?.ocr_used) {
+            flags.push('✅ OCR backend filled in the missing text')
+        }
     } catch (err) {
         flags.push(`Full conversion failed: ${(err as Error).message}`)
     }
@@ -203,10 +208,13 @@ async function diagnose(filePath: string): Promise<DocReport> {
 
     // Quality score (rough)
     let score = 100
-    if (scannedPages > 0) score -= Math.min(50, (scannedPages / extracted.pages.length) * 60)
+    // If OCR wasn't applied, penalize for scanned/print-to-pdf pages.
+    // If OCR WAS applied successfully, those penalties are nullified.
+    const ocrApplied = ocr && (sourceMode === 'scan' || sourceMode === 'print_to_pdf_vector' || sourceMode === 'mixed')
+    if (scannedPages > 0 && !ocrApplied) score -= Math.min(50, (scannedPages / extracted.pages.length) * 60)
     if (multiColumnPages > 0) score -= Math.min(20, (multiColumnPages / extracted.pages.length) * 30)
     if (headings === 0 && extracted.pages.length > 1) score -= 10
-    if (paragraphs === 0 && totalItems > 0) score -= 30
+    if (paragraphs === 0 && totalItems > 0 && !ocrApplied) score -= 30
     if (!valid) score -= 20
     score = Math.max(0, Math.round(score))
 
@@ -478,14 +486,18 @@ async function gatherFiles(input: string): Promise<string[]> {
 async function main() {
     const args = process.argv.slice(2)
     if (args.length === 0) {
-        console.error('Usage: npx tsx examples/diagnose-pdf.ts <pdf-or-dir> [--out report.md]')
+        console.error(
+            'Usage: npx tsx examples/diagnose-pdf.ts <pdf-or-dir> [--out report.md] [--ocr]',
+        )
+        console.error('  --ocr  Enable Tesseract+Poppler OCR for pages with no extractable text')
         process.exit(1)
     }
 
     const outIdx = args.indexOf('--out')
     const outPath = outIdx >= 0 ? args[outIdx + 1] : undefined
+    const enableOcr = args.includes('--ocr')
     const inputs = args.filter((a, i) => {
-        if (a === '--out') return false
+        if (a === '--out' || a === '--ocr') return false
         if (outIdx >= 0 && i === outIdx + 1) return false
         return true
     })
@@ -498,24 +510,41 @@ async function main() {
         process.exit(1)
     }
 
+    let ocr: OcrPipelineOptions | undefined
+    let ocrBackend: TesseractOcrBackend | undefined
+    if (enableOcr) {
+        console.error('OCR enabled (Poppler + Tesseract). First page may take ~10s as the worker spins up.')
+        ocrBackend = new TesseractOcrBackend({ language: 'eng' })
+        ocr = {
+            render: new PopplerRenderBackend(),
+            ocr: ocrBackend,
+            mode: 'auto',
+            dpi: 200,
+        }
+    }
+
     console.error(`Diagnosing ${allFiles.length} file(s)...`)
     const reports: DocReport[] = []
-    for (const file of allFiles) {
-        process.stderr.write(`  ${path.basename(file)}... `)
-        try {
-            const r = await diagnose(file)
-            reports.push(r)
-            const tag = r.parseError
-                ? '❌'
-                : (r.qualityScore ?? 0) >= 70
-                    ? '🟢'
-                    : (r.qualityScore ?? 0) >= 30
-                        ? '🟡'
-                        : '🔴'
-            console.error(`${tag} (score ${r.qualityScore ?? 'n/a'})`)
-        } catch (err) {
-            console.error(`💥 ${(err as Error).message}`)
+    try {
+        for (const file of allFiles) {
+            process.stderr.write(`  ${path.basename(file)}... `)
+            try {
+                const r = await diagnose(file, ocr)
+                reports.push(r)
+                const tag = r.parseError
+                    ? '❌'
+                    : (r.qualityScore ?? 0) >= 70
+                        ? '🟢'
+                        : (r.qualityScore ?? 0) >= 30
+                            ? '🟡'
+                            : '🔴'
+                console.error(`${tag} (score ${r.qualityScore ?? 'n/a'})`)
+            } catch (err) {
+                console.error(`💥 ${(err as Error).message}`)
+            }
         }
+    } finally {
+        await ocrBackend?.close().catch(() => {})
     }
 
     const report = renderReport(reports)

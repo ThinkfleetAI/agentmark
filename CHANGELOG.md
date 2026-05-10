@@ -5,6 +5,66 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-05-10
+
+OCR + render-backend support. Pages with no extractable text (scanner
+output, "Microsoft Print To PDF" exports, image-only PDFs) can now be
+rasterized + OCR'd transparently. Two render backends and two OCR
+backends ship; the interfaces let callers plug in any provider.
+
+### Added
+
+- **`OcrBackend` / `RenderBackend` interfaces.** Minimal, plug-and-play.
+  Bring AWS Textract, Google Document AI, Apple Vision, etc. by
+  implementing one method each.
+- **`PopplerRenderBackend`** — shells out to `pdftoppm`. Lightest install.
+- **`PdfjsRenderBackend`** — pure-Node via pdfjs-dist + node-canvas.
+- **`TesseractOcrBackend`** — in-process WASM OCR. Free, offline.
+- **`MistralOcrBackend`** — Mistral OCR cloud API. Best quality.
+- **`convertPdf({ ocr: { render, ocr, mode } })`** — opt-in OCR pipeline
+  with three modes: `auto` (OCR only pages with no extractable text;
+  default), `always` (OCR every page), `never` (disable).
+- **`document.ocr_used` flag** — set to `true` in the snapshot's
+  document metadata when OCR was actually applied.
+- **`agentmark` capability `ocr: true`** is set on snapshots that used OCR.
+- **Diagnostic CLI `--ocr` flag** — `npx tsx examples/diagnose-pdf.ts
+  ./corpus --ocr` to validate OCR on a corpus.
+- **`examples/ocr-pdf.ts`** — end-to-end demo wiring Poppler + Tesseract.
+
+### Changed
+
+- `tesseract.js` and `canvas` added as optional peer dependencies. Both
+  are required only by the matching backend; web-only callers install
+  neither.
+- `convertPdf` defensively wraps cleanup `close()` calls so backends
+  may return `void | Promise<void>`.
+
+### Real-world validation
+
+Insurance corpus (12 docs) results, before vs after v0.5:
+
+| Mode | 🟢 ≥70 | 🟡 30-69 | 🔴 <30 |
+|---|---|---|---|
+| Without OCR | 6 (50%) | 6 (50%) | 0 |
+| With OCR (Poppler + Tesseract) | **12 (100%)** | 0 | 0 |
+
+Failing categories before v0.5 — all now resolved by OCR:
+- "Microsoft Print To PDF" vector-glyph PDFs (4 docs)
+- Scanner output (2 docs)
+
+### Tests
+
+- 8 new OCR pipeline unit tests (mocked backends, deterministic).
+- Total: 176 unit + 10 real-Chromium integration = 186 (was 176).
+
+### Not in this release (deferred)
+
+- AWS Textract / Google Document AI / Apple Vision reference adapters
+  (interface ships; community impls welcome)
+- Form-structure inference (label/value pair detection on non-AcroForm
+  PDFs) — paired with M3 / v0.6
+- AcroForm support — M3 / v0.6
+
 ## [0.4.0] — 2026-05-10
 
 PDF support. The same wire format now applies to documents — `convertPdf()`
@@ -141,6 +201,7 @@ Initial release of `@thinkfleet/agentmark`.
 - In-memory action binding
 - 90 tests, npm provenance auto-publish
 
+[0.5.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.2.0
