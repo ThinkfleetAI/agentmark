@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # Fast unit-test job — Node matrix, no browser binaries needed.
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -26,8 +27,39 @@ jobs:
       - run: npm run build
       - run: npm test
 
+  # Integration job — installs Chromium and runs the SDK against a real
+  # browser. Slower so kept separate; runs on Node 20 only and on Linux.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - name: Install Chromium for playwright-core
+        run: npx playwright-core install --with-deps chromium
+      - run: npm run build
+      - name: Run integration tests
+        env:
+          AGENTMARK_INTEGRATION: '1'
+        run: npx vitest run test/runtime.integration.test.ts
+
+  # macOS smoke test — catches platform-specific regressions in the
+  # converter and serializer paths. Unit tests only (browser-free).
+  macos-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm test
+
   publish:
-    needs: test
+    needs: [test, integration, macos-smoke]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:

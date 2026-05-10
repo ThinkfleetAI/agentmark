@@ -52,3 +52,46 @@ export { InMemoryActionBinding } from './binding/action-binding'
 export { buildBody } from './extractors/body-builder'
 export { EXTRACTOR_SCRIPT } from './extractors/dom-extractor'
 export type { RawExtraction, RawAction, RawMedia, BodySegment } from './extractors/dom-extractor'
+
+// ── M1 Pass 1: runtime, errors, observability, branded IDs ───────────────
+
+export { ActionId, MediaId, RegionId } from './ids/branded'
+
+export {
+    AgentMarkError,
+    SnapshotError,
+    ExecutionError,
+    ActionNotFoundError,
+    ActionDisabledError,
+    ActionTypeError,
+    ElementNotFoundError,
+    ExecutionTimeoutError,
+    SessionError,
+    isAgentMarkError,
+} from './errors'
+
+export { noopLogger, consoleLogger } from './observability/logger'
+export type { Logger } from './observability/logger'
+export type { AgentMarkEvent } from './observability/events'
+
+export {
+    executeAction,
+    DEFAULT_ACTION_TIMEOUT_MS,
+} from './runtime/action-executor'
+export type { ExecuteOptions, ExecutionResult } from './runtime/action-executor'
+
+// ── M1 Pass 2: SDK surface (Browser / Page / session persistence) ────────
+
+export { Browser, createBrowser, Page } from './runtime'
+export type {
+    CreateBrowserOptions,
+    PageSnapshot,
+    PageNavigationOptions,
+} from './runtime'
+
+export {
+    saveSessionToFile,
+    loadSessionFromFile,
+    SESSION_FORMAT_VERSION,
+} from './runtime/session'
+export type { SessionFile, StorageState } from './runtime/session'
