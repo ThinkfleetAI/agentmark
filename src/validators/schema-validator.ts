@@ -14,14 +14,15 @@ const validatorCache = new Map<string, ValidateFunction>()
  * Unknown versions fall back to the highest known schema and emit a warning
  * elsewhere — see `validateSnapshot` cross-field check 2e.
  */
-function resolveSchemaVersion(declared: string): '0.1' | '0.2' {
+function resolveSchemaVersion(declared: string): '0.1' | '0.2' | '0.3' {
     const [major, minor] = declared.split('.')
     const minorMajor = `${major}.${minor}`
     if (minorMajor === '0.1') return '0.1'
-    return '0.2'
+    if (minorMajor === '0.2') return '0.2'
+    return '0.3'
 }
 
-function loadValidator(version: '0.1' | '0.2'): ValidateFunction {
+function loadValidator(version: '0.1' | '0.2' | '0.3'): ValidateFunction {
     const cached = validatorCache.get(version)
     if (cached) return cached
 
@@ -87,12 +88,14 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     // Payload-carrying tags (no lookup): ERROR, CHALLENGE
     // No-payload tags: AUTH_WALL
     const ACTION_RESOLVING = new Set(['ACTION', 'INPUT', 'NAV', 'TOAST'])
-    const MEDIA_RESOLVING = new Set(['MEDIA'])
+    const MEDIA_RESOLVING = new Set(['MEDIA', 'FRAME'])
     const SIGNATURE_RESOLVING = new Set(['SIGNATURE'])
     const PAYLOAD_TAGS = new Set(['ERROR', 'CHALLENGE'])
-    // PAGE is a v0.2 structural marker for `kind: 'document'` — payload is a
-    // page identifier (e.g. p_1) that does not resolve to any envelope entry.
-    const STRUCTURAL_TAGS = new Set(['PAGE'])
+    // Structural tags whose payload doesn't resolve to any envelope entry:
+    //   PAGE    — v0.2, page boundary marker (p_n)
+    //   TIME    — v0.3, timestamp marker for audio/video (t_seconds)
+    //   SPEAKER — v0.3, speaker label (resolves to envelope.speakers map)
+    const STRUCTURAL_TAGS = new Set(['PAGE', 'TIME', 'SPEAKER'])
 
     const signatureIds = new Set(Object.keys(snapshot.signatures ?? {}))
 

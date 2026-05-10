@@ -186,3 +186,16 @@ export type {
     ClaudeVisionOptions,
     OpenAiVisionOptions,
 } from './pdf'
+
+// ── v0.10: Audio support (kind: 'audio') ─────────────────────────────────
+
+export { convertAudio, WhisperApiBackend } from './audio'
+export type {
+    ConvertAudioOptions,
+    WhisperApiOptions,
+    TranscriptionBackend,
+    TranscriptionResult,
+    TranscriptionSegment,
+    TranscribeOptions,
+} from './audio'
+export type { MediaMeta } from './types'

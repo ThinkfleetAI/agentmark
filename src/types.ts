@@ -5,20 +5,20 @@
  * Producers build an `Snapshot`; serializers turn it into the wire format.
  */
 
-export const AGENTMARK_VERSION = '0.2' as const
+export const AGENTMARK_VERSION = '0.3' as const
 
 /** Spec versions this implementation can validate against. */
-export const SUPPORTED_SPEC_VERSIONS = ['0.1', '0.2'] as const
+export const SUPPORTED_SPEC_VERSIONS = ['0.1', '0.2', '0.3'] as const
 
 // ──────────────────────────────────────────────────────────────────────────
 // Frontmatter envelope
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Discriminator added in v0.2. Identifies what kind of surface the snapshot
- * was extracted from. Defaults to 'webpage' when omitted (v0.1 compatibility).
+ * Discriminator. v0.2 added `webpage|document|form`; v0.3 added `audio|video`.
+ * Defaults to 'webpage' when omitted (v0.1 compatibility).
  */
-export type SnapshotKind = 'webpage' | 'document' | 'form'
+export type SnapshotKind = 'webpage' | 'document' | 'form' | 'audio' | 'video'
 
 export interface Snapshot {
     /** Spec version, e.g. "0.1" or "0.2" */
@@ -52,6 +52,12 @@ export interface Snapshot {
     /** Document-specific metadata (v0.2+, populated when kind === 'document'). */
     document?: DocumentMeta
 
+    /** Audio/video-specific metadata (v0.3+, populated when kind === 'audio' | 'video'). */
+    media_meta?: MediaMeta
+
+    /** Speaker labels keyed by ID (v0.3+, audio/video). Map ID → display name. */
+    speakers?: Record<string, string>
+
     /**
      * Detected signatures on the document, keyed by signature ID
      * (e.g. `sig_1`). Body uses `[SIGNATURE:sig_1]` to reference them.
@@ -68,6 +74,28 @@ export interface Snapshot {
 }
 
 export type SnapshotSource = 'rendered' | 'declared' | 'hybrid'
+
+/**
+ * Media (audio/video) metadata.
+ */
+export interface MediaMeta {
+    /** Total duration in seconds. */
+    duration_sec?: number
+    /** Format identifier (e.g. 'mp3', 'wav', 'mp4', 'webm'). */
+    format?: string
+    /** BCP-47 language tag of the spoken content. */
+    language?: string
+    /** Whether the source was transcribed (audio) or transcribed+frame-captioned (video). */
+    transcribed?: boolean
+    /** When transcribed: name of the transcription backend used. */
+    transcription_backend?: string
+    /** When video frames were captioned: name of the vision backend used. */
+    vision_backend?: string
+    /** Number of speakers identified (when diarized). */
+    speaker_count?: number
+    /** Number of frames captioned (video only). */
+    frame_count?: number
+}
 
 /**
  * Document metadata extracted from PDF (or other document) backends. All
@@ -240,6 +268,15 @@ export type BodyTagKind =
     /** v0.8+: signature reference. Payload is a signature ID (e.g. `sig_1`)
      *  whose details live in the `signatures` map of the envelope. */
     | 'SIGNATURE'
+    /** v0.3+: timestamp marker for `kind: 'audio' | 'video'`. Payload is
+     *  a time identifier (`t_0`, `t_120`) whose number is seconds-from-start. */
+    | 'TIME'
+    /** v0.3+: speaker label for `kind: 'audio' | 'video'`. Payload is a
+     *  speaker ID (`s_alice`) keyed in the `speakers` map. */
+    | 'SPEAKER'
+    /** v0.3+: video frame reference. Payload is a frame ID (`f_42`) whose
+     *  thumbnail + caption live in the `media` map. */
+    | 'FRAME'
 
 /**
  * Descriptor for a detected signature. Lives in `Snapshot.signatures` keyed

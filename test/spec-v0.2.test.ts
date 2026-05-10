@@ -5,12 +5,12 @@ import type { Snapshot } from '../src/types'
 import { SUPPORTED_SPEC_VERSIONS, AGENTMARK_VERSION } from '../src/types'
 
 describe('Spec v0.2 — kind discriminator', () => {
-    it('default version is 0.2 in this implementation', () => {
-        expect(AGENTMARK_VERSION).toBe('0.2')
+    it('default version is 0.3 in this implementation (v0.3 ships with audio support)', () => {
+        expect(AGENTMARK_VERSION).toBe('0.3')
     })
 
-    it('reports both v0.1 and v0.2 as supported', () => {
-        expect(SUPPORTED_SPEC_VERSIONS).toEqual(['0.1', '0.2'])
+    it('reports v0.1, v0.2, and v0.3 as supported', () => {
+        expect(SUPPORTED_SPEC_VERSIONS).toEqual(['0.1', '0.2', '0.3'])
     })
 
     it('v0.1 snapshots without kind still validate (backwards compat)', () => {
