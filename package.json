@@ -1,10 +1,13 @@
 {
   "name": "@thinkfleet/agentmark",
-  "version": "0.3.0",
-  "description": "AI browser library — convert any web page into a compact AgentMark snapshot, then drive it via clean primitives any AI can call. Spec: docs/specs/agentmark-v0.1.md",
+  "version": "0.11.0",
+  "description": "AI library for any AI-readable surface — web pages, PDFs (text/scanned/AcroForm), audio (transcribed), video (transcribed + frame-captioned), with signature detection. One compact wire format any AI client can read or drive via MCP.",
   "type": "commonjs",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
+  "bin": {
+    "agentmark-mcp": "./dist/src/mcp/cli.js"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -34,22 +37,45 @@
     "LICENSE"
   ],
   "dependencies": {
-    "js-yaml": "^4.1.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0",
     "tslib": "2.6.2"
   },
   "peerDependencies": {
-    "playwright-core": ">=1.40.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "playwright-core": ">=1.40.0",
+    "tesseract.js": "^5.1.1"
   },
   "peerDependenciesMeta": {
-    "playwright-core": { "optional": false }
+    "playwright-core": {
+      "optional": false
+    },
+    "pdfjs-dist": {
+      "optional": true
+    },
+    "tesseract.js": {
+      "optional": true
+    },
+    "pdf-lib": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "vitest": "3.0.8",
-    "@types/node": "20.19.9",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/js-yaml": "4.0.9",
+    "@types/node": "20.19.9",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "playwright-core": "^1.40.0",
-    "typescript": "^5.4.0"
+    "tesseract.js": "^5.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.4.0",
+    "vitest": "3.0.8"
   }
 }

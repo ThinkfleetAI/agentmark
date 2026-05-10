@@ -1,0 +1,68 @@
+{
+    "_comment": "Curated list of public government PDFs to test AgentMark against. URLs are stable as of 2026-05 — check via examples/fetch-gov-corpus.ts and update if any 404. Add your own (state SoS filings, county building permits, etc.) freely.",
+    "documents": [
+        {
+            "name": "irs-w9.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/fw9.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "W-9 — single-page fillable AcroForm, ubiquitous"
+        },
+        {
+            "name": "irs-w4.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/fw4.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "W-4 — multi-page AcroForm, common in onboarding flows"
+        },
+        {
+            "name": "irs-1040.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "Form 1040 — multi-page complex AcroForm"
+        },
+        {
+            "name": "irs-941.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/f941.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "Quarterly federal tax return — complex form"
+        },
+        {
+            "name": "irs-i1040.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/i1040gi.pdf",
+            "category": "irs-instructions",
+            "expected_kind": "document",
+            "notes": "1040 instruction booklet — long, text-heavy"
+        },
+        {
+            "name": "irs-1099-misc.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/f1099msc.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "1099-MISC — three-up form layout"
+        },
+        {
+            "name": "irs-1099-nec.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/f1099nec.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "1099-NEC — non-employee compensation"
+        },
+        {
+            "name": "irs-w2.pdf",
+            "url": "https://www.irs.gov/pub/irs-pdf/fw2.pdf",
+            "category": "irs-tax-form",
+            "expected_kind": "form",
+            "notes": "W-2 — wage statement, multi-copy layout"
+        },
+        {
+            "name": "irs-i9.pdf",
+            "url": "https://www.uscis.gov/sites/default/files/document/forms/i-9.pdf",
+            "category": "uscis",
+            "expected_kind": "form",
+            "notes": "I-9 employment eligibility — USCIS, fillable"
+        }
+    ]
+}

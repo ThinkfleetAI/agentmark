@@ -2,10 +2,12 @@
 // MIT License | https://github.com/ThinkfleetAI/agentmark
 // Spec: docs/specs/agentmark-v0.1.md
 
-export { AGENTMARK_VERSION } from './types'
+export { AGENTMARK_VERSION, SUPPORTED_SPEC_VERSIONS } from './types'
 export type {
     Snapshot,
     SnapshotSource,
+    SnapshotKind,
+    DocumentMeta,
     PageState,
     ActionType,
     ActionCost,
@@ -95,3 +97,116 @@ export {
     SESSION_FORMAT_VERSION,
 } from './runtime/session'
 export type { SessionFile, StorageState } from './runtime/session'
+
+// ── M2: PDF / document support (kind: 'document') ─────────────────────────
+
+export {
+    convertPdf,
+    extractPdf,
+    buildBodyFromPdf,
+} from './pdf'
+export type {
+    ConvertPdfOptions,
+    ExtractPdfOptions,
+    BuildPdfBodyOptions,
+    ExtractedPdf,
+    PdfDocumentMeta,
+    PdfPage,
+    PdfTextItem,
+    PdfBlock,
+} from './pdf'
+
+// ── v0.5: OCR + render backends (Tesseract / Mistral / Poppler / pdfjs) ──
+
+export {
+    PopplerRenderBackend,
+    PdfjsRenderBackend,
+    TesseractOcrBackend,
+    MistralOcrBackend,
+} from './pdf'
+export type {
+    PopplerRenderOptions,
+    TesseractBackendOptions,
+    MistralOcrOptions,
+    RenderBackend,
+    RenderPageOptions,
+    RenderedPage,
+    OcrBackend,
+    OcrPageOptions,
+    OcrPageResult,
+    OcrPipelineOptions,
+} from './pdf'
+
+// ── M3 / v0.6: AcroForm support (kind: 'form') ───────────────────────────
+
+export { extractAcroForm, PdfDocument, openPdfDocument } from './pdf'
+export type {
+    ExtractAcroFormOptions,
+    AcroFormExtraction,
+    AcroFormField,
+    AcroFormFieldKind,
+    OpenPdfDocumentOptions,
+    PdfDocumentSnapshot,
+    SaveOptions,
+} from './pdf'
+
+// ── v0.8 + v0.9: Signature detection (heuristic + vision) ────────────────
+
+export {
+    detectSignatures,
+    defaultDetectors,
+    AcroFormSignatureDetector,
+    HeuristicImageSignatureDetector,
+    LabelPatternSignatureDetector,
+    VisionSignatureDetector,
+    inferRoleFromFieldName,
+    inferRoleFromNearbyText,
+} from './pdf'
+export type {
+    DetectedSignature,
+    SignatureDetector,
+    SignatureDetectorInput,
+    SignatureKind,
+    SignatureRole,
+    HeuristicImageDetectorOptions,
+    VisionSignatureDetectorOptions,
+} from './pdf'
+export type { SignatureDescriptor } from './types'
+
+// ── v0.9: Vision backends ────────────────────────────────────────────────
+
+export {
+    ClaudeVisionBackend,
+    OpenAiVisionBackend,
+} from './pdf'
+export type {
+    VisionBackend,
+    AnalyzeOptions,
+    AnalyzeResult,
+    ClaudeVisionOptions,
+    OpenAiVisionOptions,
+} from './pdf'
+
+// ── v0.10: Audio support (kind: 'audio') ─────────────────────────────────
+
+export { convertAudio, WhisperApiBackend } from './audio'
+export type {
+    ConvertAudioOptions,
+    WhisperApiOptions,
+    TranscriptionBackend,
+    TranscriptionResult,
+    TranscriptionSegment,
+    TranscribeOptions,
+} from './audio'
+export type { MediaMeta } from './types'
+
+// ── v0.11: Video support (kind: 'video') ─────────────────────────────────
+
+export { convertVideo, FfmpegFrameBackend } from './video'
+export type {
+    ConvertVideoOptions,
+    FfmpegFrameBackendOptions,
+    FrameExtractionBackend,
+    ExtractFramesOptions,
+    ExtractedFrame,
+} from './video'

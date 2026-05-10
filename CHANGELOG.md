@@ -5,9 +5,236 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-05-10
+
+MCP server. The entire AgentMark library is now drivable from any MCP
+client (Claude Desktop, Cursor, Claude Code, custom agents) through a
+single config entry.
+
+### Added
+
+- **`agentmark-mcp` CLI** — bin entry in package.json. Configure any
+  MCP client with one line:
+  ```json
+  {
+    "mcpServers": {
+      "agentmark": {
+        "command": "npx",
+        "args": ["-y", "@thinkfleet/agentmark", "agentmark-mcp"]
+      }
+    }
+  }
+  ```
+- **15 MCP tools** covering every public surface:
+  - Browser: `browser_open` / `browser_close` / `browser_save_session`
+  - Page: `page_open` / `page_navigate` / `page_snapshot` / `page_execute` / `page_close`
+  - PDF: `pdf_open` (file path or `data:` URI) / `pdf_close` / `pdf_snapshot` / `pdf_execute` / `pdf_save` / `pdf_reset`
+  - Meta: `list_sessions` for debugging stuck connections
+- **Stateful session model.** The server holds long-lived browsers + open
+  PDFs keyed by IDs returned from `_open` calls, so one MCP connection
+  can drive multiple parallel agents.
+- **Programmatic access.** `createMcpServer()` + `startMcpServer()` +
+  `dispatch()` exported for embedding the server in other applications
+  or testing without spinning up stdio.
+- **Graceful shutdown.** SIGINT / SIGTERM disposes all browsers,
+  Tesseract workers, and PDF handles before exit.
+- **`@modelcontextprotocol/sdk` as optional peer dependency.** Library
+  callers who don't run the MCP server pay no install cost; surface a
+  clean error if the SDK is missing.
+
+### Tests
+
+- 14 new dispatcher tests (PDF round-trip, error semantics, data-URI
+  loading, session listing, dispose-all)
+- 4 new wire-level handshake tests using `InMemoryTransport` (full
+  MCP protocol — handshake, ListTools, CallTool, error responses) —
+  proves real MCP clients can connect without spawning a subprocess.
+- Total: 213 unit + 10 real-Chromium integration = 223 (was 199).
+
+### Distribution unlocked
+
+After `npm publish`, anyone can configure AgentMark in any MCP client
+with the snippet above. No code, no language, no setup beyond the
+config file. The full SDK (web + PDF + OCR + form fill/save) becomes
+available as ~15 tools any agent can call.
+
+## [0.6.0] — 2026-05-10
+
+PDF form support. AcroForm fields become AgentMark actions; the new
+`PdfDocument` class lets agents fill, save, and flatten forms with the
+same `execute()` shape as the web `Page` SDK.
+
+### Added
+
+- **AcroForm extraction.** `convertPdf()` automatically reads AcroForm
+  fields and sets `kind: 'form'` on snapshots that have any. Fields
+  become `ActionDefinition`s with the correct AgentMark action types
+  (text → `type`, checkbox → `check`, radio/combo → `select`,
+  multi-list → `multi_select`, signature → disabled `click`).
+- **Field flag handling.** `Required` and `ReadOnly` flags are read from
+  page annotations (where pdfjs-dist surfaces them) since
+  `getFieldObjects()` doesn't expose them in v4+.
+- **Sensitive-name redaction.** Field names matching common patterns
+  (password, ssn, credit_card, cvv, account_num, token, secret, etc.)
+  get `(redacted)` labels and `undefined` values, mirroring the
+  password-field handling in the web extractor.
+- **Humanized labels.** `applicant.first_name` / `firstName` /
+  `first-name` all become `"First Name"` in the action's `label`.
+- **`PdfDocument` SDK class** + `openPdfDocument()` factory — stateful
+  wrapper that pairs the snapshot with field-fill state:
+  - `snapshot()` — capture current form state
+  - `execute(actionId, value)` — queue a field value
+  - `save({ flatten? })` — write a new PDF with all queued values
+    applied; `flatten: true` bakes values into page content
+  - `reset()` — discard queued values
+  - `close()` — release resources
+  - `fields`, `pending`, `snapshotCache` — read-only accessors
+- **Schema validation.** AgentMark IDs synthesized for AcroForm fields
+  match the spec regex `^[a-z][a-z0-9_]{0,63}$` regardless of how
+  irregular the source field names are.
+- **`pdf-lib` as optional peer dependency.** Reading + extracting fields
+  uses `pdfjs-dist`; writing fields back requires `pdf-lib`. Surface a
+  clean `SnapshotError` with install instructions if `pdf-lib` is
+  missing.
+
+### Changed
+
+- Internal type `PdfDocument` (the extraction-result interface) renamed
+  to `ExtractedPdf` to free `PdfDocument` for the public class. The
+  type was internal; no consumer code references it through the public
+  API.
+- `convertPdf()` now sets `kind: 'form'` (not `'document'`) when the
+  source PDF has AcroForm fields.
+- Action IDs for AcroForm fields are synthesized as `act_field_N` to
+  guarantee schema compliance — original field names are preserved in
+  the binding map for fill operations.
+
+### Tests
+
+- 12 new AcroForm extractor tests + 11 new `PdfDocument` round-trip
+  tests, all passing.
+- Total: 199 unit + 10 real-Chromium integration = 209 (was 188).
+- Round-trip coverage: text / checkbox / dropdown / multi-select listbox
+  all verified through fill → save → re-extract.
+
+### Known limitations
+
+- `pdfjs-dist`'s `getFieldObjects()` only reports the first selected
+  value of a multi-select listbox. The PDF saved by AgentMark contains
+  ALL selected values correctly (verified via direct pdf-lib reading);
+  it's only the snapshot that under-reports. No fix planned — wait for
+  pdfjs-dist upstream support.
+- Signature fields surface as disabled actions; AgentMark intentionally
+  refuses to fulfill them. Human review required.
+
+## [0.5.0] — 2026-05-10
+
+OCR + render-backend support. Pages with no extractable text (scanner
+output, "Microsoft Print To PDF" exports, image-only PDFs) can now be
+rasterized + OCR'd transparently. Two render backends and two OCR
+backends ship; the interfaces let callers plug in any provider.
+
+### Added
+
+- **`OcrBackend` / `RenderBackend` interfaces.** Minimal, plug-and-play.
+  Bring AWS Textract, Google Document AI, Apple Vision, etc. by
+  implementing one method each.
+- **`PopplerRenderBackend`** — shells out to `pdftoppm`. Lightest install.
+- **`PdfjsRenderBackend`** — pure-Node via pdfjs-dist + node-canvas.
+- **`TesseractOcrBackend`** — in-process WASM OCR. Free, offline.
+- **`MistralOcrBackend`** — Mistral OCR cloud API. Best quality.
+- **`convertPdf({ ocr: { render, ocr, mode } })`** — opt-in OCR pipeline
+  with three modes: `auto` (OCR only pages with no extractable text;
+  default), `always` (OCR every page), `never` (disable).
+- **`document.ocr_used` flag** — set to `true` in the snapshot's
+  document metadata when OCR was actually applied.
+- **`agentmark` capability `ocr: true`** is set on snapshots that used OCR.
+- **Diagnostic CLI `--ocr` flag** — `npx tsx examples/diagnose-pdf.ts
+  ./corpus --ocr` to validate OCR on a corpus.
+- **`examples/ocr-pdf.ts`** — end-to-end demo wiring Poppler + Tesseract.
+
+### Changed
+
+- `tesseract.js` and `canvas` added as optional peer dependencies. Both
+  are required only by the matching backend; web-only callers install
+  neither.
+- `convertPdf` defensively wraps cleanup `close()` calls so backends
+  may return `void | Promise<void>`.
+
+### Real-world validation
+
+Insurance corpus (12 docs) results, before vs after v0.5:
+
+| Mode | 🟢 ≥70 | 🟡 30-69 | 🔴 <30 |
+|---|---|---|---|
+| Without OCR | 6 (50%) | 6 (50%) | 0 |
+| With OCR (Poppler + Tesseract) | **12 (100%)** | 0 | 0 |
+
+Failing categories before v0.5 — all now resolved by OCR:
+- "Microsoft Print To PDF" vector-glyph PDFs (4 docs)
+- Scanner output (2 docs)
+
+### Tests
+
+- 8 new OCR pipeline unit tests (mocked backends, deterministic).
+- Total: 176 unit + 10 real-Chromium integration = 186 (was 176).
+
+### Not in this release (deferred)
+
+- AWS Textract / Google Document AI / Apple Vision reference adapters
+  (interface ships; community impls welcome)
+- Form-structure inference (label/value pair detection on non-AcroForm
+  PDFs) — paired with M3 / v0.6
+- AcroForm support — M3 / v0.6
+
+## [0.4.0] — 2026-05-10
+
+PDF support. The same wire format now applies to documents — `convertPdf()`
+produces a `kind: 'document'` snapshot from PDF bytes. Spec extension to v0.2.
+
+### Added
+
+- **Spec v0.2** — adds `kind: webpage | document | form` discriminator,
+  optional `document` metadata block (pages, author, created_at, format,
+  format_version, ocr_used), and the `[PAGE:p_n]` body tag for page-boundary
+  markers in documents. Fully backwards-compatible: v0.1 snapshots without
+  `kind` still validate (treated as webpages).
+- **`convertPdf({ data, sourceUrl, ... })`** — main entry point. Parses
+  PDF metadata (title, author, dates, format version), extracts text + font
+  sizes per page, builds an AgentMark body with PAGE markers and inferred
+  structure (headings via font-size outliers, bullet + ordered list
+  detection, paragraph reflow). Returns the same `ConversionResult` as
+  `convertPage()` for uniform downstream handling.
+- **`extractPdf()`** — lower-level extraction returning a structured
+  `PdfDocument` (pages with positioned text items + metadata). For callers
+  who want to do their own structural inference.
+- **`buildBodyFromPdf()`** — body-segment builder consumed by `convertPdf`,
+  exposed for callers who want a different envelope.
+- **`schema/agentmark-v0.2.json`** — JSON schema for the v0.2 envelope;
+  validator now picks v0.1 or v0.2 schema based on the declared `agentmark`
+  version.
+- **`pdfjs-dist`** as an optional peer dependency. Throws clean
+  `SnapshotError` with install instructions if missing — web-only callers
+  pay no install cost.
+- 13 new spec-v0.2 tests + 12 new PDF converter tests, all passing.
+  Total: 166 unit + 10 real-Chromium integration = 176 (was 141).
+
+### Changed
+
+- `AGENTMARK_VERSION` constant bumped from `'0.1'` to `'0.2'`. Existing
+  callers serializing snapshots get v0.2 by default. Validator accepts both.
+- README and `examples/pdf.ts` show the new PDF flow.
+
+### Not yet shipped
+
+- OCR for scanned PDFs — interface designed (`document.ocr_used` flag in
+  metadata), implementation deferred to v0.5.0.
+- Table detection — heuristics for column-aligned text deferred to v0.5.0.
+- AcroForm support — coming in M3 / v0.5.0.
+
 ## [0.3.0] — 2026-05-10
 
-This is the **first production-ready release**. Adds the high-level SDK
+The **first production-ready release**. Adds the high-level SDK
 surface, structured error hierarchy, observability hooks, and session
 persistence on top of the v0.2 wire-format conversion.
 
@@ -96,6 +323,10 @@ Initial release of `@thinkfleet/agentmark`.
 - In-memory action binding
 - 90 tests, npm provenance auto-publish
 
+[0.7.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.7.0
+[0.6.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.6.0
+[0.5.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.5.0
+[0.4.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.1.0

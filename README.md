@@ -92,6 +92,179 @@ flow, etc.) brings the loop. AgentMark just exposes great browser primitives.
   Cloudflare, reCAPTCHA, hCaptcha auto-resolved before snapshot.
 - **Library, not a framework.** Bring your own model, prompts, and loop.
 
+## PDFs (v0.4+)
+
+The same wire format works for PDFs. `convertPdf()` produces a `kind: 'document'` snapshot with `[PAGE:p_n]` markers between pages.
+
+```ts
+import { readFile } from 'node:fs/promises'
+import { convertPdf } from '@thinkfleet/agentmark'
+
+const data = await readFile('./report.pdf')
+const { agentmark } = await convertPdf({
+    data,
+    sourceUrl: 'file:///abs/path/report.pdf',
+})
+
+console.log(agentmark)
+// ---
+// agentmark: "0.2"
+// kind: document
+// url: "file:///abs/path/report.pdf"
+// title: "Annual Report 2025"
+// document:
+//   pages: 47
+//   author: "Acme Inc."
+//   format: pdf
+//   format_version: "1.7"
+//   ocr_used: false
+// ---
+//
+// [PAGE:p_1]
+//
+// # Annual Report 2025
+// ...
+```
+
+PDF support is opt-in via the optional peer dependency:
+
+```bash
+npm install pdfjs-dist@^4
+```
+
+If `pdfjs-dist` is missing, `convertPdf()` throws a `SnapshotError` with install instructions. Heading detection uses font-size + bold-font-name heuristics (configurable via `headingThreshold`); bullet and ordered lists auto-detect.
+
+### Fillable PDF forms (v0.6+)
+
+When a PDF contains AcroForm fields (most fillable government and business forms), AgentMark sets `kind: 'form'` on the snapshot and exposes each field as an action. Use the stateful `PdfDocument` SDK class to fill and save:
+
+```ts
+import { openPdfDocument } from '@thinkfleet/agentmark'
+
+const data = await readFile('./vendor-application.pdf')
+const doc = await openPdfDocument({ data, sourceUrl: 'file:///vendor.pdf' })
+
+const snap = await doc.snapshot()
+console.log(snap.snapshot.kind)  // 'form'
+console.log(Object.keys(snap.snapshot.actions ?? {}))
+
+// Fill fields. Same execute() shape as the web Page SDK.
+await doc.execute('act_field_1', 'Acme Inc.')
+await doc.execute('act_field_2', true)            // checkbox
+await doc.execute('act_field_3', 'NC')            // dropdown
+await doc.execute('act_field_4', ['English', 'Spanish'])  // multi-select
+
+// Save the filled PDF as new bytes.
+const filled = await doc.save()
+await writeFile('./vendor-application-filled.pdf', filled)
+
+// Or flatten — bake values into the page content; no longer fillable.
+const flattened = await doc.save({ flatten: true })
+
+await doc.close()
+```
+
+Field handling:
+
+| AcroForm type | AgentMark action | Notes |
+|---|---|---|
+| Text (single + multi-line) | `type: 'type'` | Sensitive names auto-redacted (password, ssn, credit_card, etc.) |
+| Checkbox | `type: 'check'` | Boolean |
+| Radio group | `type: 'select'` | Options from PDF |
+| Dropdown | `type: 'select'` | Options from PDF |
+| Listbox (single / multi) | `type: 'select'` / `'multi_select'` | |
+| Signature | `type: 'click'` (disabled) | Refused — agents can't sign |
+| Push button | `type: 'click'` | |
+
+Required fields, read-only fields, and PDF field flags (read from page annotations) all surface in the resulting `ActionDefinition`.
+
+PDF form filling is opt-in via the optional peer dependency:
+
+```bash
+npm install pdf-lib
+```
+
+If `pdf-lib` is missing, `doc.save()` throws a `SnapshotError` with install instructions — `doc.snapshot()` and `doc.execute()` still work without it (fields are read via pdfjs-dist).
+
+### OCR for scanned and "Print To PDF" documents (v0.5+)
+
+Many real-world PDFs have no extractable text — scanner output, "Microsoft Print To PDF" exports, etc. AgentMark ships pluggable OCR + render backends to handle these. Two of each are bundled; bring your own (AWS Textract, Google Document AI, Apple Vision Framework) by implementing the `OcrBackend` / `RenderBackend` interfaces.
+
+```ts
+import {
+    convertPdf,
+    PopplerRenderBackend,
+    TesseractOcrBackend,
+} from '@thinkfleet/agentmark'
+
+const { agentmark } = await convertPdf({
+    data,
+    sourceUrl: 'file:///tmp/scanned.pdf',
+    ocr: {
+        render: new PopplerRenderBackend(),       // pdftoppm-based rasterization
+        ocr:    new TesseractOcrBackend(),        // in-process WASM OCR
+        mode: 'auto',  // OCR only pages with no extractable text (default)
+    },
+})
+```
+
+**Bundled render backends:**
+
+| Backend | Install | When to use |
+|---|---|---|
+| `PopplerRenderBackend` | `brew install poppler` (macOS) / `apt-get install poppler-utils` | Lightest. No native node modules. |
+| `PdfjsRenderBackend` | `npm install canvas` | Pure-Node, no system deps. Heavier install. |
+
+**Bundled OCR backends:**
+
+| Backend | Install | Cost | Quality |
+|---|---|---|---|
+| `TesseractOcrBackend` | `npm install tesseract.js@^5` | Free | Decent on clean text |
+| `MistralOcrBackend` | (none — uses `fetch`) | ~$1/1k pages | Excellent, layout-aware |
+
+OCR modes:
+- `'auto'` (default) — OCR only pages with no extractable text. Mixed text+image PDFs handled correctly.
+- `'always'` — OCR every page (overrides any extracted text).
+- `'never'` — disable OCR. Same as omitting `ocr` from `convertPdf`.
+
+## MCP server (v0.7+)
+
+AgentMark ships a Model Context Protocol server so any MCP client (Claude Desktop, Cursor, Claude Code, custom agents) can use the entire library — web, PDF, OCR, AcroForm — through one configuration entry. No SDK install, no language commitment.
+
+**Configure once in your MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "agentmark": {
+      "command": "npx",
+      "args": ["-y", "@thinkfleet/agentmark", "agentmark-mcp"]
+    }
+  }
+}
+```
+
+The server exposes ~15 tools, prefixed `agentmark_*`:
+
+| Surface | Tools |
+|---|---|
+| Browser | `agentmark_browser_open`, `agentmark_browser_close`, `agentmark_browser_save_session` |
+| Page | `agentmark_page_open`, `agentmark_page_navigate`, `agentmark_page_snapshot`, `agentmark_page_execute`, `agentmark_page_close` |
+| PDF | `agentmark_pdf_open`, `agentmark_pdf_close`, `agentmark_pdf_snapshot`, `agentmark_pdf_execute`, `agentmark_pdf_save`, `agentmark_pdf_reset` |
+| Meta | `agentmark_list_sessions` |
+
+Each tool is documented in-line via the MCP `list_tools` response — clients see usage hints, JSON schemas, and parameter descriptions automatically.
+
+The server holds long-lived state per connection (browsers, opened PDFs) keyed by IDs returned from `_open` calls — agents can drive multiple parallel surfaces from one connection. Resources auto-release on shutdown via SIGINT/SIGTERM cleanup.
+
+MCP support is opt-in via the optional peer dependency:
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+Library callers who don't run the MCP server pay no install cost.
+
 ## Lower-level APIs
 
 For callers who want direct control over conversion or want to feed AgentMark
