@@ -1,0 +1,61 @@
+{
+    "name": "@thinkfleet/piece-agentmark",
+    "version": "0.1.0",
+    "description": "Activepieces piece — convert any web page or PDF into an AgentMark snapshot, then drive it from any flow.",
+    "type": "commonjs",
+    "main": "./dist/src/index.js",
+    "types": "./dist/src/index.d.ts",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ThinkfleetAI/agentmark.git",
+        "directory": "pieces/agentmark"
+    },
+    "homepage": "https://agentmark.dev",
+    "keywords": [
+        "activepieces",
+        "piece",
+        "agentmark",
+        "ai",
+        "browser",
+        "pdf",
+        "ocr",
+        "form-fill"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.lib.json && cp package.json dist/",
+        "test": "vitest run"
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "dependencies": {
+        "@thinkfleet/agentmark": "file:../..",
+        "tslib": "^2.3.0",
+        "undici": "^7.0.0"
+    },
+    "_publishing_note": "@thinkfleet/agentmark is `file:../..` for in-monorepo development; bump to ^0.7.0 (or whatever version is on npm) before publishing this piece.",
+    "peerDependencies": {
+        "@activepieces/pieces-framework": ">=0.7.0",
+        "playwright-core": ">=1.40.0"
+    },
+    "peerDependenciesMeta": {
+        "@activepieces/pieces-framework": {
+            "optional": false
+        },
+        "playwright-core": {
+            "optional": false
+        }
+    },
+    "devDependencies": {
+        "@activepieces/pieces-framework": "*",
+        "@types/node": "20.19.9",
+        "pdf-lib": "^1.17.1",
+        "pdfjs-dist": "^4.10.38",
+        "playwright-core": "^1.40.0",
+        "tesseract.js": "^5.1.1",
+        "typescript": "^5.4.0",
+        "vitest": "3.0.8"
+    }
+}
