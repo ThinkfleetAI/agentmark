@@ -21,9 +21,17 @@ export async function extractPdf(opts: ExtractPdfOptions): Promise<PdfDocument> 
 
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']>
     try {
-        const data = opts.data instanceof Uint8Array
-            ? opts.data
-            : new Uint8Array(opts.data)
+        // Materialize a *plain* Uint8Array view of the bytes. Two reasons:
+        //  1. Node's Buffer is technically a Uint8Array subclass, but
+        //     pdfjs-dist does a stricter prototype check that rejects it.
+        //  2. pdfjs-dist may detach the underlying ArrayBuffer during parse
+        //     (transferring ownership). We make a defensive copy so callers
+        //     can reuse the same input bytes across multiple calls.
+        const src = opts.data
+        const view = src instanceof ArrayBuffer
+            ? new Uint8Array(src)
+            : new Uint8Array(src.buffer, src.byteOffset, src.byteLength)
+        const data = new Uint8Array(view) // explicit copy
         doc = await pdfjs.getDocument({
             data,
             password: opts.password,

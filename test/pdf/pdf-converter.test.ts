@@ -124,6 +124,25 @@ describe('extractPdf', () => {
             code: 'snapshot_failed',
         })
     })
+
+    it('accepts the same buffer twice without ArrayBuffer detachment errors', async () => {
+        // Regression: pdfjs-dist transfers ownership of the underlying
+        // ArrayBuffer during parse. extractPdf must defensively copy so
+        // callers can pass the same Uint8Array to multiple calls.
+        const pdf = await buildPdf({ pages: [{ body: 'Reusable bytes.' }] })
+        const first = await extractPdf({ data: pdf })
+        const second = await extractPdf({ data: pdf })
+        expect(first.metadata.pages).toBe(1)
+        expect(second.metadata.pages).toBe(1)
+    })
+
+    it('accepts a Node Buffer (Uint8Array subclass) without prototype mismatch', async () => {
+        // Regression: pdfjs-dist's strict prototype check rejects Buffer.
+        const pdf = await buildPdf({ pages: [{ body: 'Buffer compat.' }] })
+        const buffer = Buffer.from(pdf)
+        const result = await extractPdf({ data: buffer })
+        expect(result.metadata.pages).toBe(1)
+    })
 })
 
 describe('convertPdf', () => {
