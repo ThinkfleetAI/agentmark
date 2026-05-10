@@ -26,7 +26,20 @@ import { buildBodyFromPdf } from '../src/pdf/body-builder'
 import { convertPdf } from '../src/pdf/pdf-converter'
 import { parseSnapshot } from '../src/serializers/yaml-frontmatter'
 import { validateSnapshot } from '../src/validators/schema-validator'
+import { loadPdfjs } from '../src/pdf/pdfjs-loader'
 import type { PdfDocument } from '../src/pdf/types'
+
+/**
+ * What kind of PDF did this start life as? Drives the suggestion text and
+ * the diagnostic flags.
+ */
+type SourceMode =
+    | 'real_text'           // Text streams with showText ops — extraction works
+    | 'scan'                // Single-image-per-page (Epson, scanner output) — needs OCR
+    | 'print_to_pdf_vector' // Microsoft Print To PDF / similar — glyphs as vector paths, needs OCR
+    | 'mixed'               // Some text + some images — partial extraction
+    | 'empty'               // No content at all
+    | 'unknown'
 
 interface PageDiagnostic {
     page: number
@@ -45,7 +58,8 @@ interface DocReport {
     sizeBytes: number
     parseError?: string
     pages?: number
-    metadata?: { title?: string; author?: string; pdf_version?: string }
+    metadata?: { title?: string; author?: string; pdf_version?: string; producer?: string }
+    sourceMode?: SourceMode
     perPage?: PageDiagnostic[]
     body?: {
         segments: number
@@ -93,6 +107,11 @@ async function diagnose(filePath: string): Promise<DocReport> {
         }
     }
 
+    // Source-mode classification — distinguishes the three failure modes
+    // discovered in the insurance corpus: real text, scanner output, and
+    // "Print To PDF" vector-rendered glyphs.
+    const { sourceMode, producer } = await classifySourceMode(data, extracted)
+
     // Per-page analysis
     const perPage: PageDiagnostic[] = []
     let scannedPages = 0
@@ -126,13 +145,24 @@ async function diagnose(filePath: string): Promise<DocReport> {
         })
     }
 
-    if (scannedPages > 0) {
-        flags.push(`${scannedPages}/${extracted.pages.length} pages have no extractable text — likely scanned`)
-        suggestions.push('OCR backend (v0.5) needed to handle this document')
-    }
     if (multiColumnPages > 0) {
         flags.push(`${multiColumnPages}/${extracted.pages.length} pages appear multi-column`)
         suggestions.push('Multi-column reading-order inference (v0.5+) would improve this document')
+    }
+
+    // Source-mode-specific flags + suggestions
+    if (sourceMode === 'scan') {
+        flags.push(`Source mode: scanner output${producer ? ` (Producer: "${producer}")` : ''} — pages are images, no extractable text`)
+        suggestions.push('OCR backend (v0.5) needed — images-only PDFs cannot be text-extracted without OCR')
+    } else if (sourceMode === 'print_to_pdf_vector') {
+        flags.push(`Source mode: "Print To PDF" vector-rendered glyphs (Producer: "${producer ?? 'unknown'}") — text rendered as filled paths, not text streams`)
+        suggestions.push('OCR backend (v0.5) is the practical fix; alternatively request the original source PDF from the issuer to skip OCR entirely')
+    } else if (sourceMode === 'mixed') {
+        flags.push(`${scannedPages}/${extracted.pages.length} pages have no extractable text (mixed-content document)`)
+        suggestions.push('OCR backend (v0.5) needed for the image pages; text pages already extract')
+    } else if (sourceMode === 'empty') {
+        flags.push('Document contains no extractable content (no text, no images)')
+        suggestions.push('Investigate — file may be corrupt or use an unsupported encoding')
     }
 
     // Body-builder analysis
@@ -188,7 +218,9 @@ async function diagnose(filePath: string): Promise<DocReport> {
             title: extracted.metadata.title,
             author: extracted.metadata.author,
             pdf_version: extracted.metadata.pdf_version,
+            producer,
         },
+        sourceMode,
         perPage,
         body: {
             segments: segments.length,
@@ -204,6 +236,94 @@ async function diagnose(filePath: string): Promise<DocReport> {
         flags,
         suggestions,
     }
+}
+
+/**
+ * Determine the source mode by inspecting metadata + operator distribution
+ * on a sample of pages. Distinguishes:
+ *   - 'real_text'           → has text streams (showText ops)
+ *   - 'scan'                → images-only (paintImageXObject + scanner producer)
+ *   - 'print_to_pdf_vector' → glyphs as filled paths (constructPath/fill, no text ops, Print-to-PDF producer)
+ *   - 'mixed'               → some text + some image pages
+ *   - 'empty'               → no text, no images
+ */
+async function classifySourceMode(
+    data: Uint8Array,
+    extracted: PdfDocument,
+): Promise<{ sourceMode: SourceMode; producer?: string }> {
+    const pdfjs = await loadPdfjs()
+    const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    const doc = await pdfjs
+        .getDocument({ data: new Uint8Array(view), verbosity: 0 })
+        .promise
+
+    const meta = await doc.getMetadata().catch(() => ({ info: {}, metadata: null }))
+    const info = (meta.info ?? {}) as { Producer?: string }
+    const producer = typeof info.Producer === 'string' ? info.Producer : undefined
+
+    const ops = pdfjs.OPS as Record<string, number>
+    const SHOW_TEXT = ops.showText
+    const PAINT_IMAGE = ops.paintImageXObject
+    const PAINT_INLINE_IMAGE = ops.paintInlineImageXObject
+    const CONSTRUCT_PATH = ops.constructPath
+    const FILL = ops.fill
+
+    // Sample the first up-to-3 pages for op-level analysis (full doc would
+    // be too slow on large PDFs; first few pages are highly representative).
+    const sampleCount = Math.min(doc.numPages, 3)
+    let pagesWithText = 0
+    let pagesWithImageOnly = 0
+    let pagesWithVectorGlyphs = 0
+    let pagesEmpty = 0
+
+    for (let i = 1; i <= sampleCount; i++) {
+        const page = await doc.getPage(i)
+        const opList = await page.getOperatorList()
+        const fns = opList.fnArray
+        let textOps = 0
+        let imageOps = 0
+        let pathOps = 0
+        let fillOps = 0
+        for (const fn of fns) {
+            if (fn === SHOW_TEXT) textOps++
+            else if (fn === PAINT_IMAGE || fn === PAINT_INLINE_IMAGE) imageOps++
+            else if (fn === CONSTRUCT_PATH) pathOps++
+            else if (fn === FILL) fillOps++
+        }
+
+        const itemsOnThisPage = extracted.pages[i - 1]?.items.length ?? 0
+
+        if (textOps > 0 && itemsOnThisPage > 0) {
+            pagesWithText++
+        } else if (imageOps > 0 && textOps === 0) {
+            pagesWithImageOnly++
+        } else if (pathOps > 50 && fillOps > 50 && textOps === 0) {
+            // Heavy vector drawing with no text ops → glyphs as filled paths
+            pagesWithVectorGlyphs++
+        } else if (fns.length === 0) {
+            pagesEmpty++
+        } else {
+            // Some other shape — count as image-only fallback
+            pagesWithImageOnly++
+        }
+        page.cleanup()
+    }
+    await doc.destroy()
+
+    let sourceMode: SourceMode = 'unknown'
+    if (pagesWithText > 0 && pagesWithImageOnly + pagesWithVectorGlyphs === 0) {
+        sourceMode = 'real_text'
+    } else if (pagesWithImageOnly > 0 && pagesWithText === 0 && pagesWithVectorGlyphs === 0) {
+        sourceMode = 'scan'
+    } else if (pagesWithVectorGlyphs > 0 && pagesWithText === 0) {
+        sourceMode = 'print_to_pdf_vector'
+    } else if (pagesEmpty === sampleCount) {
+        sourceMode = 'empty'
+    } else if (pagesWithText > 0) {
+        sourceMode = 'mixed'
+    }
+
+    return { sourceMode, producer }
 }
 
 function detectColumnGap(xs: number[], pageWidth: number): boolean {
@@ -275,6 +395,30 @@ function renderReport(reports: DocReport[]): string {
         lines.push('')
     }
 
+    // Source mode breakdown
+    const modes = new Map<string, number>()
+    for (const r of reports) {
+        if (r.sourceMode) modes.set(r.sourceMode, (modes.get(r.sourceMode) ?? 0) + 1)
+    }
+    if (modes.size > 0) {
+        lines.push(`## Source-mode breakdown`)
+        lines.push('')
+        lines.push(`| Mode | Count | Meaning |`)
+        lines.push(`|---|---|---|`)
+        const explain: Record<string, string> = {
+            real_text: 'Text streams present — extraction works',
+            scan: 'Scanner output (image-per-page) — needs OCR',
+            print_to_pdf_vector: '"Print To PDF" vector glyphs — needs OCR or original source',
+            mixed: 'Some text pages + some image pages — needs OCR for image pages',
+            empty: 'No content',
+            unknown: 'Could not classify',
+        }
+        for (const [mode, count] of [...modes.entries()].sort((a, b) => b[1] - a[1])) {
+            lines.push(`| \`${mode}\` | ${count} | ${explain[mode] ?? '?'} |`)
+        }
+        lines.push('')
+    }
+
     lines.push(`## Per-document detail`)
     lines.push('')
     for (const r of reports) {
@@ -289,6 +433,8 @@ function renderReport(reports: DocReport[]): string {
         }
         lines.push(`- Pages: ${r.pages}`)
         lines.push(`- Quality score: **${r.qualityScore}/100**`)
+        if (r.sourceMode) lines.push(`- Source mode: \`${r.sourceMode}\``)
+        if (r.metadata?.producer) lines.push(`- Producer: ${r.metadata.producer}`)
         if (r.metadata?.title) lines.push(`- Title: ${r.metadata.title}`)
         if (r.metadata?.pdf_version) lines.push(`- PDF version: ${r.metadata.pdf_version}`)
         if (r.body) {

@@ -70,6 +70,8 @@ interface PdfLine {
     text: string
     /** X position of the first item — used for indentation hints. */
     leftX: number
+    /** Whether every text item on this line uses a bold font. */
+    isBold: boolean
 }
 
 /**
@@ -103,20 +105,33 @@ function groupItemsIntoLines(page: PdfPage): PdfLine[] {
     return lines
 }
 
+/**
+ * Heuristic: a font is "bold" if its name contains common bold markers.
+ * pdfjs-dist exposes the original font name from the PDF font dictionary,
+ * which by convention encodes weight (e.g. "Helvetica-Bold", "ArialMT-Black",
+ * "TimesNewRoman,Bold"). False positives are unlikely.
+ */
+const BOLD_FONT_RE = /-?(Bold|Black|Heavy|Semibold|Demi|Extrabold)\b/i
+
 function buildLine(items: PdfTextItem[]): PdfLine {
     // Sort by X ascending so reading order is preserved.
     const sorted = [...items].sort((a, b) => a.x - b.x)
+    const textOnly = sorted.filter((it) => it.text.trim().length > 0)
     const text = sorted
         .map((it) => it.text)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim()
     const maxFontSize = sorted.reduce((m, it) => Math.max(m, it.fontSize), 0)
+    const isBold =
+        textOnly.length > 0
+        && textOnly.every((it) => BOLD_FONT_RE.test(it.fontName))
     return {
         y: sorted[0]?.y ?? 0,
         maxFontSize,
         text,
         leftX: sorted[0]?.x ?? 0,
+        isBold,
     }
 }
 
@@ -169,7 +184,14 @@ function linesToBlocks(
         }
 
         // ── Heading detection ─────────────────────────────────────────────
-        const headingLevel = inferHeadingLevel(line.maxFontSize, median, topSizes, headingThreshold)
+        // Two paths:
+        //  1. Outlier font size (≥ threshold × median) → heading by size
+        //  2. Bold-only line, short, alone in its vertical slot, body-sized
+        //     → heading by weight (very common in form-style PDFs that
+        //     render every line at the same point size)
+        const headingLevel =
+            inferHeadingLevel(line.maxFontSize, median, topSizes, headingThreshold)
+            ?? inferHeadingFromWeight(line, median)
         if (headingLevel !== null) {
             flushAll()
             segments.push({ kind: 'heading', level: headingLevel, text: line.text })
@@ -216,6 +238,29 @@ function inferHeadingLevel(
     if (topSizes.length >= 2 && approxEqual(fontSize, topSizes[1], 0.5)) return 2
     if (topSizes.length >= 3 && approxEqual(fontSize, topSizes[2], 0.5)) return 3
     // Otherwise just call it h2.
+    return 2
+}
+
+/**
+ * Detect a heading by font *weight* rather than size. PDFs (especially
+ * forms) often render headings as bold text at the same point size as
+ * the body. Conditions:
+ *   - Every text item on the line uses a bold font name
+ *   - The line is short enough to be a heading (≤ 80 chars, heuristic)
+ *   - Font size is roughly body-sized (within 20% of median)
+ *
+ * Returns h2 by default — we don't have enough signal to distinguish
+ * h1/h2/h3 from weight alone. False positives are bounded by the length
+ * cap.
+ */
+function inferHeadingFromWeight(line: PdfLine, median: number): 2 | null {
+    if (!line.isBold) return null
+    if (line.text.length === 0 || line.text.length > 80) return null
+    if (median > 0 && Math.abs(line.maxFontSize - median) / median > 0.2) {
+        // Significantly different size — already handled (or skipped) by
+        // size-based heuristic. Bold-by-weight is for body-sized lines.
+        return null
+    }
     return 2
 }
 
