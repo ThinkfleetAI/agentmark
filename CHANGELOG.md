@@ -5,9 +5,54 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-10
+
+PDF support. The same wire format now applies to documents — `convertPdf()`
+produces a `kind: 'document'` snapshot from PDF bytes. Spec extension to v0.2.
+
+### Added
+
+- **Spec v0.2** — adds `kind: webpage | document | form` discriminator,
+  optional `document` metadata block (pages, author, created_at, format,
+  format_version, ocr_used), and the `[PAGE:p_n]` body tag for page-boundary
+  markers in documents. Fully backwards-compatible: v0.1 snapshots without
+  `kind` still validate (treated as webpages).
+- **`convertPdf({ data, sourceUrl, ... })`** — main entry point. Parses
+  PDF metadata (title, author, dates, format version), extracts text + font
+  sizes per page, builds an AgentMark body with PAGE markers and inferred
+  structure (headings via font-size outliers, bullet + ordered list
+  detection, paragraph reflow). Returns the same `ConversionResult` as
+  `convertPage()` for uniform downstream handling.
+- **`extractPdf()`** — lower-level extraction returning a structured
+  `PdfDocument` (pages with positioned text items + metadata). For callers
+  who want to do their own structural inference.
+- **`buildBodyFromPdf()`** — body-segment builder consumed by `convertPdf`,
+  exposed for callers who want a different envelope.
+- **`schema/agentmark-v0.2.json`** — JSON schema for the v0.2 envelope;
+  validator now picks v0.1 or v0.2 schema based on the declared `agentmark`
+  version.
+- **`pdfjs-dist`** as an optional peer dependency. Throws clean
+  `SnapshotError` with install instructions if missing — web-only callers
+  pay no install cost.
+- 13 new spec-v0.2 tests + 12 new PDF converter tests, all passing.
+  Total: 166 unit + 10 real-Chromium integration = 176 (was 141).
+
+### Changed
+
+- `AGENTMARK_VERSION` constant bumped from `'0.1'` to `'0.2'`. Existing
+  callers serializing snapshots get v0.2 by default. Validator accepts both.
+- README and `examples/pdf.ts` show the new PDF flow.
+
+### Not yet shipped
+
+- OCR for scanned PDFs — interface designed (`document.ocr_used` flag in
+  metadata), implementation deferred to v0.5.0.
+- Table detection — heuristics for column-aligned text deferred to v0.5.0.
+- AcroForm support — coming in M3 / v0.5.0.
+
 ## [0.3.0] — 2026-05-10
 
-This is the **first production-ready release**. Adds the high-level SDK
+The **first production-ready release**. Adds the high-level SDK
 surface, structured error hierarchy, observability hooks, and session
 persistence on top of the v0.2 wire-format conversion.
 
@@ -96,6 +141,7 @@ Initial release of `@thinkfleet/agentmark`.
 - In-memory action binding
 - 90 tests, npm provenance auto-publish
 
+[0.4.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.1.0

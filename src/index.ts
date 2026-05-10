@@ -2,10 +2,12 @@
 // MIT License | https://github.com/ThinkfleetAI/agentmark
 // Spec: docs/specs/agentmark-v0.1.md
 
-export { AGENTMARK_VERSION } from './types'
+export { AGENTMARK_VERSION, SUPPORTED_SPEC_VERSIONS } from './types'
 export type {
     Snapshot,
     SnapshotSource,
+    SnapshotKind,
+    DocumentMeta,
     PageState,
     ActionType,
     ActionCost,
@@ -95,3 +97,21 @@ export {
     SESSION_FORMAT_VERSION,
 } from './runtime/session'
 export type { SessionFile, StorageState } from './runtime/session'
+
+// ── M2: PDF / document support (kind: 'document') ─────────────────────────
+
+export {
+    convertPdf,
+    extractPdf,
+    buildBodyFromPdf,
+} from './pdf'
+export type {
+    ConvertPdfOptions,
+    ExtractPdfOptions,
+    BuildPdfBodyOptions,
+    PdfDocument,
+    PdfDocumentMeta,
+    PdfPage,
+    PdfTextItem,
+    PdfBlock,
+} from './pdf'

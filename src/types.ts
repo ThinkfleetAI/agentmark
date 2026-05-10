@@ -5,18 +5,29 @@
  * Producers build an `Snapshot`; serializers turn it into the wire format.
  */
 
-export const AGENTMARK_VERSION = '0.1' as const
+export const AGENTMARK_VERSION = '0.2' as const
+
+/** Spec versions this implementation can validate against. */
+export const SUPPORTED_SPEC_VERSIONS = ['0.1', '0.2'] as const
 
 // ──────────────────────────────────────────────────────────────────────────
 // Frontmatter envelope
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Discriminator added in v0.2. Identifies what kind of surface the snapshot
+ * was extracted from. Defaults to 'webpage' when omitted (v0.1 compatibility).
+ */
+export type SnapshotKind = 'webpage' | 'document' | 'form'
+
 export interface Snapshot {
-    /** Spec version, e.g. "0.1" */
+    /** Spec version, e.g. "0.1" or "0.2" */
     agentmark: string
-    /** Absolute URL of the page at capture time */
+    /** Surface kind (v0.2+). Default: 'webpage'. */
+    kind?: SnapshotKind
+    /** Absolute URL of the page (or document `file://` URI) at capture time */
     url: string
-    /** Page title */
+    /** Page or document title */
     title: string
 
     /** ISO 8601 capture timestamp */
@@ -38,6 +49,9 @@ export interface Snapshot {
     cookies?: CookieState
     permissions?: PermissionState
 
+    /** Document-specific metadata (v0.2+, populated when kind === 'document'). */
+    document?: DocumentMeta
+
     /** The Markdown body */
     body: string
 
@@ -46,6 +60,27 @@ export interface Snapshot {
 }
 
 export type SnapshotSource = 'rendered' | 'declared' | 'hybrid'
+
+/**
+ * Document metadata extracted from PDF (or other document) backends. All
+ * fields optional — backends populate what they can.
+ */
+export interface DocumentMeta {
+    /** Total page count. */
+    pages?: number
+    /** Document author, when present in metadata. */
+    author?: string
+    /** ISO 8601 creation timestamp from the source document. */
+    created_at?: string
+    /** ISO 8601 last-modified timestamp from the source document. */
+    modified_at?: string
+    /** Source format identifier — 'pdf', 'docx', etc. */
+    format?: 'pdf' | 'docx' | 'rtf' | 'txt' | 'html'
+    /** Format-specific version (e.g. PDF spec version "1.7"). */
+    format_version?: string
+    /** Whether the source was OCR'd (i.e. originally a scan). */
+    ocr_used?: boolean
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Page state
@@ -191,6 +226,9 @@ export type BodyTagKind =
     | 'CHALLENGE'
     | 'ERROR'
     | 'TOAST'
+    /** v0.2+: page boundary marker for `kind: 'document'`. Payload is a
+     *  page identifier like `p_1` whose number maps to the source PDF page. */
+    | 'PAGE'
 
 export interface BodyTagReference {
     kind: BodyTagKind

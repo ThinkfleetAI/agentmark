@@ -92,6 +92,48 @@ flow, etc.) brings the loop. AgentMark just exposes great browser primitives.
   Cloudflare, reCAPTCHA, hCaptcha auto-resolved before snapshot.
 - **Library, not a framework.** Bring your own model, prompts, and loop.
 
+## PDFs (v0.4+)
+
+The same wire format works for PDFs. `convertPdf()` produces a `kind: 'document'` snapshot with `[PAGE:p_n]` markers between pages.
+
+```ts
+import { readFile } from 'node:fs/promises'
+import { convertPdf } from '@thinkfleet/agentmark'
+
+const data = await readFile('./report.pdf')
+const { agentmark } = await convertPdf({
+    data,
+    sourceUrl: 'file:///abs/path/report.pdf',
+})
+
+console.log(agentmark)
+// ---
+// agentmark: "0.2"
+// kind: document
+// url: "file:///abs/path/report.pdf"
+// title: "Annual Report 2025"
+// document:
+//   pages: 47
+//   author: "Acme Inc."
+//   format: pdf
+//   format_version: "1.7"
+//   ocr_used: false
+// ---
+//
+// [PAGE:p_1]
+//
+// # Annual Report 2025
+// ...
+```
+
+PDF support is opt-in via the optional peer dependency:
+
+```bash
+npm install pdfjs-dist@^4
+```
+
+If `pdfjs-dist` is missing, `convertPdf()` throws a `SnapshotError` with install instructions. Heading detection uses font-size heuristics (configurable via `headingThreshold`); bullet and ordered lists auto-detect. Tables and OCR for scanned PDFs ship in v0.5.
+
 ## Lower-level APIs
 
 For callers who want direct control over conversion or want to feed AgentMark

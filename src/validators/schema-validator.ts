@@ -6,18 +6,35 @@ import * as path from 'path'
 import type { Snapshot } from '../types'
 import { extractTagReferences } from '../serializers/body-text'
 
-let cachedValidator: ValidateFunction | null = null
+const validatorCache = new Map<string, ValidateFunction>()
 
-function loadValidator(): ValidateFunction {
-    if (cachedValidator) return cachedValidator
+/**
+ * Resolve the schema major.minor for a declared agentmark version. We accept
+ * any patch version of a known major.minor (e.g. "0.1.3" matches v0.1).
+ * Unknown versions fall back to the highest known schema and emit a warning
+ * elsewhere — see `validateSnapshot` cross-field check 2e.
+ */
+function resolveSchemaVersion(declared: string): '0.1' | '0.2' {
+    const [major, minor] = declared.split('.')
+    const minorMajor = `${major}.${minor}`
+    if (minorMajor === '0.1') return '0.1'
+    return '0.2'
+}
+
+function loadValidator(version: '0.1' | '0.2'): ValidateFunction {
+    const cached = validatorCache.get(version)
+    if (cached) return cached
+
     const ajv = new Ajv2020({ allErrors: true, strict: false })
     // ajv-formats ships its own nested ajv version; the cast bridges the type mismatch.
     // The runtime is identical (same JSON Schema spec).
     addFormats(ajv as unknown as Parameters<typeof addFormats>[0])
-    const schemaPath = path.join(__dirname, '..', '..', 'schema', 'agentmark-v0.1.json')
+
+    const schemaPath = path.join(__dirname, '..', '..', 'schema', `agentmark-v${version}.json`)
     const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'))
-    cachedValidator = ajv.compile(schema)
-    return cachedValidator
+    const validator = ajv.compile(schema)
+    validatorCache.set(version, validator)
+    return validator
 }
 
 export interface ValidationIssue {
@@ -44,8 +61,9 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     const errors: ValidationIssue[] = []
     const warnings: ValidationIssue[] = []
 
-    // 1. Schema validation (frontmatter only)
-    const validator = loadValidator()
+    // 1. Schema validation (frontmatter only) — pick schema by declared version
+    const schemaVersion = resolveSchemaVersion(snapshot.agentmark)
+    const validator = loadValidator(schemaVersion)
     const { body, ...envelope } = snapshot
     const valid = validator(envelope)
     if (!valid && validator.errors) {
@@ -71,11 +89,15 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     const ACTION_RESOLVING = new Set(['ACTION', 'INPUT', 'NAV', 'TOAST'])
     const MEDIA_RESOLVING = new Set(['MEDIA'])
     const PAYLOAD_TAGS = new Set(['ERROR', 'CHALLENGE'])
+    // PAGE is a v0.2 structural marker for `kind: 'document'` — payload is a
+    // page identifier (e.g. p_1) that does not resolve to any envelope entry.
+    const STRUCTURAL_TAGS = new Set(['PAGE'])
 
     const bodyRefs = extractTagReferences(body)
     for (const ref of bodyRefs) {
         if (!ref.payload) continue // AUTH_WALL etc.
         if (PAYLOAD_TAGS.has(ref.kind)) continue
+        if (STRUCTURAL_TAGS.has(ref.kind)) continue
         if (ACTION_RESOLVING.has(ref.kind) && !actionIds.has(ref.payload)) {
             errors.push({
                 severity: 'error',
@@ -152,12 +174,24 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
 
     // 2e. version compatibility
     const major = parseInt(snapshot.agentmark.split('.')[0], 10)
-    if (major > 0) {
+    const minor = parseInt(snapshot.agentmark.split('.')[1] ?? '0', 10)
+    if (major > 0 || minor > 2) {
         warnings.push({
             severity: 'warning',
             path: '/agentmark',
-            message: `This validator implements v0.x; document declares v${snapshot.agentmark}`,
+            message: `This validator implements v0.1 + v0.2; snapshot declares v${snapshot.agentmark}. Validated against v0.2 schema.`,
         })
+    }
+
+    // 2f. document-kind sanity (v0.2)
+    if (snapshot.kind === 'document') {
+        if (snapshot.state?.auth || snapshot.state?.modal_open) {
+            warnings.push({
+                severity: 'warning',
+                path: '/state',
+                message: `Web-page state fields (auth, modal_open) are unusual for kind: 'document'`,
+            })
+        }
     }
 
     return { valid: errors.length === 0, errors, warnings }

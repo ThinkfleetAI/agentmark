@@ -45,7 +45,7 @@ describe('buildSnapshot', () => {
 
     it('sets agentmark version, source, and timestamps', () => {
         const snap = buildSnapshot(fakeExtraction())
-        expect(snap.agentmark).toBe('0.1')
+        expect(snap.agentmark).toBe('0.2')
         expect(snap.source).toBe('rendered')
         expect(snap.captured_at).toBeDefined()
         expect(snap.expires_at).toBeDefined()
