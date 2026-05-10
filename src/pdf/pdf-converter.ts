@@ -35,6 +35,13 @@ import type {
 import type { ExtractedPdf, PdfTextItem } from './types'
 import { extractAcroForm } from './forms/acroform-extractor'
 import type { AcroFormField } from './forms/types'
+import {
+    detectSignatures,
+    defaultDetectors,
+    type DetectedSignature,
+    type SignatureDetector,
+} from './signatures'
+import type { SignatureDescriptor } from '../types'
 
 export interface ConvertPdfOptions {
     /** Raw PDF bytes (from `readFile`, `fetch`, etc.). */
@@ -63,6 +70,12 @@ export interface ConvertPdfOptions {
      * PdfDocument before body-building.
      */
     ocr?: OcrPipelineOptions
+    /**
+     * Custom signature-detector chain. When omitted, runs the default
+     * detectors (AcroForm Sig widgets + heuristic image signatures).
+     * Pass an empty array to disable signature detection entirely.
+     */
+    signatureDetectors?: SignatureDetector[]
 }
 
 /**
@@ -101,6 +114,26 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
             return { fields: [] as AcroFormField[], hasFields: false }
         })
 
+    // Detect signatures (AcroForm Sig widgets + heuristic image detection).
+    // Empty array passed → user explicitly disabled detection.
+    const detectorChain =
+        options.signatureDetectors === undefined
+            ? defaultDetectors()
+            : options.signatureDetectors
+    const rawBytes =
+        options.data instanceof ArrayBuffer
+            ? new Uint8Array(options.data)
+            : new Uint8Array(options.data.buffer, options.data.byteOffset, options.data.byteLength)
+    const signatures: DetectedSignature[] = detectorChain.length > 0
+        ? await detectSignatures(
+            { extracted, rawBytes, password: options.password },
+            detectorChain,
+        ).catch((err: Error) => {
+            logger.warn('signatures.detect.failed', { error: err.message })
+            return []
+        })
+        : []
+
     const segments = buildBodyFromPdf(extracted, options.body ?? {})
     const body = buildBody(segments)
 
@@ -129,6 +162,25 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         actions[field.actionId] = field.action
     }
 
+    // Build the signatures map for the envelope, preserving the renumbered
+    // IDs from detectSignatures.
+    const signaturesMap: Record<string, SignatureDescriptor> = {}
+    for (const sig of signatures) {
+        signaturesMap[sig.id] = stripUndefined({
+            kind: sig.kind,
+            page: sig.page,
+            rect: sig.rect,
+            field_name: sig.field_name,
+            inferred_role: sig.inferred_role,
+            signer_name: sig.signer_name,
+            signer_email: sig.signer_email,
+            signed_at: sig.signed_at,
+            confidence: sig.confidence,
+            valid: sig.valid,
+            notes: sig.notes,
+        })
+    }
+
     const snapshot: Snapshot = {
         agentmark: AGENTMARK_VERSION,
         kind,
@@ -140,6 +192,7 @@ export async function convertPdf(options: ConvertPdfOptions): Promise<Conversion
         language: options.language,
         document: stripUndefined(documentMeta),
         actions: acroform.hasFields ? actions : undefined,
+        signatures: signatures.length > 0 ? signaturesMap : undefined,
         capabilities: {
             preview_media: false,
             expand_disclosures: false,

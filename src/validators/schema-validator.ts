@@ -88,10 +88,13 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     // No-payload tags: AUTH_WALL
     const ACTION_RESOLVING = new Set(['ACTION', 'INPUT', 'NAV', 'TOAST'])
     const MEDIA_RESOLVING = new Set(['MEDIA'])
+    const SIGNATURE_RESOLVING = new Set(['SIGNATURE'])
     const PAYLOAD_TAGS = new Set(['ERROR', 'CHALLENGE'])
     // PAGE is a v0.2 structural marker for `kind: 'document'` — payload is a
     // page identifier (e.g. p_1) that does not resolve to any envelope entry.
     const STRUCTURAL_TAGS = new Set(['PAGE'])
+
+    const signatureIds = new Set(Object.keys(snapshot.signatures ?? {}))
 
     const bodyRefs = extractTagReferences(body)
     for (const ref of bodyRefs) {
@@ -110,6 +113,13 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
                 severity: 'error',
                 path: `body[${ref.position}]`,
                 message: `Body references ${ref.kind}:${ref.payload} but no matching media is defined`,
+            })
+        }
+        if (SIGNATURE_RESOLVING.has(ref.kind) && !signatureIds.has(ref.payload)) {
+            errors.push({
+                severity: 'error',
+                path: `body[${ref.position}]`,
+                message: `Body references ${ref.kind}:${ref.payload} but no matching signature is defined in the envelope`,
             })
         }
         // MODAL/TAB/DISCLOSURE refs are structural — payload is a label,

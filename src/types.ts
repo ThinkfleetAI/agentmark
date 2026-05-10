@@ -52,6 +52,14 @@ export interface Snapshot {
     /** Document-specific metadata (v0.2+, populated when kind === 'document'). */
     document?: DocumentMeta
 
+    /**
+     * Detected signatures on the document, keyed by signature ID
+     * (e.g. `sig_1`). Body uses `[SIGNATURE:sig_1]` to reference them.
+     * Populated by the signature-detection pipeline (v0.8+) when the
+     * source surface is a PDF.
+     */
+    signatures?: Record<string, SignatureDescriptor>
+
     /** The Markdown body */
     body: string
 
@@ -229,6 +237,35 @@ export type BodyTagKind =
     /** v0.2+: page boundary marker for `kind: 'document'`. Payload is a
      *  page identifier like `p_1` whose number maps to the source PDF page. */
     | 'PAGE'
+    /** v0.8+: signature reference. Payload is a signature ID (e.g. `sig_1`)
+     *  whose details live in the `signatures` map of the envelope. */
+    | 'SIGNATURE'
+
+/**
+ * Descriptor for a detected signature. Lives in `Snapshot.signatures` keyed
+ * by ID. Body references via `[SIGNATURE:sig_1]`.
+ */
+export interface SignatureDescriptor {
+    kind:
+        | 'widget_visible_signed'
+        | 'widget_unsigned'
+        | 'cryptographic'
+        | 'image_handwritten'
+        | 'image_typed'
+        | 'docusign'
+        | 'adobe_sign'
+        | 'unknown'
+    page: number
+    rect?: { x: number; y: number; width: number; height: number }
+    field_name?: string
+    inferred_role?: string
+    signer_name?: string
+    signer_email?: string
+    signed_at?: string
+    confidence: number
+    valid?: boolean
+    notes?: string
+}
 
 export interface BodyTagReference {
     kind: BodyTagKind

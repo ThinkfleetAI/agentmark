@@ -149,3 +149,23 @@ export type {
     PdfDocumentSnapshot,
     SaveOptions,
 } from './pdf'
+
+// ── v0.8: Signature detection ────────────────────────────────────────────
+
+export {
+    detectSignatures,
+    defaultDetectors,
+    AcroFormSignatureDetector,
+    HeuristicImageSignatureDetector,
+    inferRoleFromFieldName,
+    inferRoleFromNearbyText,
+} from './pdf'
+export type {
+    DetectedSignature,
+    SignatureDetector,
+    SignatureDetectorInput,
+    SignatureKind,
+    SignatureRole,
+    HeuristicImageDetectorOptions,
+} from './pdf'
+export type { SignatureDescriptor } from './types'
