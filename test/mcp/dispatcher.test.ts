@@ -208,6 +208,29 @@ describe('dispatch — pdf flow end-to-end', () => {
         expect(json.pdfs[0].pending).toBe(0)
     })
 
+    it('open with enable_ocr=true sets ocr_enabled in the response', async () => {
+        const pdfPath = tmpPath()
+        await writeFormPdf(pdfPath)
+        const open = await dispatch(state, 'agentmark_pdf_open', {
+            source: pdfPath,
+            enable_ocr: true,
+            ocr_language: 'eng',
+        })
+        expect(open.isError).not.toBe(true)
+        const opened = JSON.parse(open.text)
+        expect(opened.ocr_enabled).toBe(true)
+        // Cleanup — the doc owns Tesseract worker; close releases it.
+        await dispatch(state, 'agentmark_pdf_close', { doc_id: opened.doc_id })
+    })
+
+    it('open with enable_ocr omitted defaults to no OCR', async () => {
+        const pdfPath = tmpPath()
+        await writeFormPdf(pdfPath)
+        const open = await dispatch(state, 'agentmark_pdf_open', { source: pdfPath })
+        const opened = JSON.parse(open.text)
+        expect(opened.ocr_enabled).toBe(false)
+    })
+
     it('open accepts a base64 data URI', async () => {
         const pdfPath = tmpPath()
         await writeFormPdf(pdfPath)

@@ -29,6 +29,7 @@ import {
 } from '../../errors'
 import { noopLogger, type Logger } from '../../observability/logger'
 import type { ActionBinding, Snapshot } from '../../types'
+import type { OcrPipelineOptions } from '../ocr/types'
 
 export interface OpenPdfDocumentOptions {
     /** Raw PDF bytes. */
@@ -41,6 +42,12 @@ export interface OpenPdfDocumentOptions {
     password?: string
     /** Logger for structured events. Default: noopLogger. */
     logger?: Logger
+    /**
+     * OCR pipeline configuration. When set, every snapshot() call routes
+     * pages with no extractable text through the configured render + OCR
+     * backends. The backends are owned by the document and disposed on close().
+     */
+    ocr?: OcrPipelineOptions
 }
 
 export interface PdfDocumentSnapshot {
@@ -69,6 +76,7 @@ export class PdfDocument {
     private readonly title?: string
     private readonly password?: string
     private readonly logger: Logger
+    private readonly ocr?: OcrPipelineOptions
     private readonly fieldByActionId = new Map<string, AcroFormField>()
     private readonly pendingValues = new Map<string, unknown>()
     private currentSnapshot: PdfDocumentSnapshot | null = null
@@ -87,6 +95,7 @@ export class PdfDocument {
         this.title = options.title
         this.password = options.password
         this.logger = options.logger ?? noopLogger
+        this.ocr = options.ocr
     }
 
     static async open(options: OpenPdfDocumentOptions): Promise<PdfDocument> {
@@ -113,7 +122,8 @@ export class PdfDocument {
             title: this.title,
             password: this.password,
             logger: this.logger,
-            ...options,
+            ocr: this.ocr,  // OCR config configured at open() time
+            ...options,    // caller can override per-snapshot
         })
 
         const parsed = parseSnapshot(result.agentmark)
@@ -234,6 +244,11 @@ export class PdfDocument {
         this.closed = true
         this.pendingValues.clear()
         this.fieldByActionId.clear()
+        // Dispose OCR + render backends owned by this doc, best effort
+        if (this.ocr) {
+            try { await Promise.resolve(this.ocr.ocr.close?.()) } catch { /* ignore */ }
+            try { await Promise.resolve(this.ocr.render.close?.()) } catch { /* ignore */ }
+        }
     }
 
     private async loadFields(): Promise<void> {

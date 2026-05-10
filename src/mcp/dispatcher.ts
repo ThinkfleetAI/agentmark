@@ -14,9 +14,12 @@ import {
     createBrowser,
     openPdfDocument,
     isAgentMarkError,
+    PopplerRenderBackend,
+    TesseractOcrBackend,
     type Browser,
     type Page,
     type PdfDocument,
+    type OcrPipelineOptions,
 } from '../index'
 import { generateSessionId, type BrowserSession, type PdfSession } from './types'
 
@@ -219,7 +222,20 @@ async function openPdf(state: DispatcherState, args: Record<string, unknown>): P
     const title = typeof args.title === 'string' ? args.title : undefined
     const password = typeof args.password === 'string' ? args.password : undefined
 
-    const document = await openPdfDocument({ data, sourceUrl, title, password })
+    let ocr: OcrPipelineOptions | undefined
+    if (args.enable_ocr === true) {
+        const language = typeof args.ocr_language === 'string' ? args.ocr_language : 'eng'
+        const dpi = typeof args.ocr_dpi === 'number' ? args.ocr_dpi : 200
+        ocr = {
+            render: new PopplerRenderBackend(),
+            ocr: new TesseractOcrBackend({ language }),
+            mode: 'auto',
+            dpi,
+            language,
+        }
+    }
+
+    const document = await openPdfDocument({ data, sourceUrl, title, password, ocr })
     const id = generateSessionId('pdf')
     state.pdfs.set(id, { id, document, createdAt: new Date() })
     return {
@@ -228,6 +244,7 @@ async function openPdf(state: DispatcherState, args: Record<string, unknown>): P
                 doc_id: id,
                 source_url: sourceUrl,
                 field_count: document.fields.size,
+                ocr_enabled: args.enable_ocr === true,
             },
             null,
             2,

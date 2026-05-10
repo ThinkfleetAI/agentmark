@@ -154,7 +154,9 @@ const PDF_TOOLS: McpToolDef[] = [
             'Open a PDF document for reading + form interaction. Returns a '
             + 'doc_id. Source can be a local file path OR a base64-encoded '
             + 'data URI (e.g. "data:application/pdf;base64,JVBERi0..."). '
-            + 'The document is held in memory until agentmark_pdf_close.',
+            + 'The document is held in memory until agentmark_pdf_close. '
+            + 'Set enable_ocr=true for scanned PDFs or "Microsoft Print To PDF" '
+            + 'output where text extraction yields nothing.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -173,6 +175,21 @@ const PDF_TOOLS: McpToolDef[] = [
                 password: {
                     type: 'string',
                     description: 'Password for encrypted PDFs.',
+                },
+                enable_ocr: {
+                    type: 'boolean',
+                    description:
+                        'Run OCR (Tesseract + Poppler) on pages with no extractable '
+                        + 'text. Requires `pdftoppm` on the worker host (macOS: '
+                        + '`brew install poppler`). Default: false.',
+                },
+                ocr_language: {
+                    type: 'string',
+                    description: 'BCP-47 language hint for OCR. Default: eng.',
+                },
+                ocr_dpi: {
+                    type: 'number',
+                    description: 'DPI for OCR rasterization. Default: 200.',
                 },
             },
             required: ['source'],
