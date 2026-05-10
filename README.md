@@ -227,6 +227,44 @@ OCR modes:
 - `'always'` — OCR every page (overrides any extracted text).
 - `'never'` — disable OCR. Same as omitting `ocr` from `convertPdf`.
 
+## MCP server (v0.7+)
+
+AgentMark ships a Model Context Protocol server so any MCP client (Claude Desktop, Cursor, Claude Code, custom agents) can use the entire library — web, PDF, OCR, AcroForm — through one configuration entry. No SDK install, no language commitment.
+
+**Configure once in your MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "agentmark": {
+      "command": "npx",
+      "args": ["-y", "@thinkfleet/agentmark", "agentmark-mcp"]
+    }
+  }
+}
+```
+
+The server exposes ~15 tools, prefixed `agentmark_*`:
+
+| Surface | Tools |
+|---|---|
+| Browser | `agentmark_browser_open`, `agentmark_browser_close`, `agentmark_browser_save_session` |
+| Page | `agentmark_page_open`, `agentmark_page_navigate`, `agentmark_page_snapshot`, `agentmark_page_execute`, `agentmark_page_close` |
+| PDF | `agentmark_pdf_open`, `agentmark_pdf_close`, `agentmark_pdf_snapshot`, `agentmark_pdf_execute`, `agentmark_pdf_save`, `agentmark_pdf_reset` |
+| Meta | `agentmark_list_sessions` |
+
+Each tool is documented in-line via the MCP `list_tools` response — clients see usage hints, JSON schemas, and parameter descriptions automatically.
+
+The server holds long-lived state per connection (browsers, opened PDFs) keyed by IDs returned from `_open` calls — agents can drive multiple parallel surfaces from one connection. Resources auto-release on shutdown via SIGINT/SIGTERM cleanup.
+
+MCP support is opt-in via the optional peer dependency:
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+Library callers who don't run the MCP server pay no install cost.
+
 ## Lower-level APIs
 
 For callers who want direct control over conversion or want to feed AgentMark

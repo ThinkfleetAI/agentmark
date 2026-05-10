@@ -5,6 +5,59 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-05-10
+
+MCP server. The entire AgentMark library is now drivable from any MCP
+client (Claude Desktop, Cursor, Claude Code, custom agents) through a
+single config entry.
+
+### Added
+
+- **`agentmark-mcp` CLI** — bin entry in package.json. Configure any
+  MCP client with one line:
+  ```json
+  {
+    "mcpServers": {
+      "agentmark": {
+        "command": "npx",
+        "args": ["-y", "@thinkfleet/agentmark", "agentmark-mcp"]
+      }
+    }
+  }
+  ```
+- **15 MCP tools** covering every public surface:
+  - Browser: `browser_open` / `browser_close` / `browser_save_session`
+  - Page: `page_open` / `page_navigate` / `page_snapshot` / `page_execute` / `page_close`
+  - PDF: `pdf_open` (file path or `data:` URI) / `pdf_close` / `pdf_snapshot` / `pdf_execute` / `pdf_save` / `pdf_reset`
+  - Meta: `list_sessions` for debugging stuck connections
+- **Stateful session model.** The server holds long-lived browsers + open
+  PDFs keyed by IDs returned from `_open` calls, so one MCP connection
+  can drive multiple parallel agents.
+- **Programmatic access.** `createMcpServer()` + `startMcpServer()` +
+  `dispatch()` exported for embedding the server in other applications
+  or testing without spinning up stdio.
+- **Graceful shutdown.** SIGINT / SIGTERM disposes all browsers,
+  Tesseract workers, and PDF handles before exit.
+- **`@modelcontextprotocol/sdk` as optional peer dependency.** Library
+  callers who don't run the MCP server pay no install cost; surface a
+  clean error if the SDK is missing.
+
+### Tests
+
+- 14 new dispatcher tests (PDF round-trip, error semantics, data-URI
+  loading, session listing, dispose-all)
+- 4 new wire-level handshake tests using `InMemoryTransport` (full
+  MCP protocol — handshake, ListTools, CallTool, error responses) —
+  proves real MCP clients can connect without spawning a subprocess.
+- Total: 213 unit + 10 real-Chromium integration = 223 (was 199).
+
+### Distribution unlocked
+
+After `npm publish`, anyone can configure AgentMark in any MCP client
+with the snippet above. No code, no language, no setup beyond the
+config file. The full SDK (web + PDF + OCR + form fill/save) becomes
+available as ~15 tools any agent can call.
+
 ## [0.6.0] — 2026-05-10
 
 PDF form support. AcroForm fields become AgentMark actions; the new
@@ -270,6 +323,7 @@ Initial release of `@thinkfleet/agentmark`.
 - In-memory action binding
 - 90 tests, npm provenance auto-publish
 
+[0.7.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ThinkfleetAI/agentmark/releases/tag/v0.4.0
