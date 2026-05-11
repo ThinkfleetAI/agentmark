@@ -14,6 +14,7 @@ import {
     createBrowser,
     convertDesktop,
     FixtureBackend,
+    MacosAxapiBackend,
     WindowsUiaBackend,
     openPdfDocument,
     isAgentMarkError,
@@ -361,12 +362,17 @@ async function openDesktop(state: DispatcherState, args: Record<string, unknown>
                 backend = new WindowsUiaBackend({ bridgePath })
                 break
             case 'macos_axapi':
-                return {
-                    text:
-                        `Backend "macos_axapi" is not yet bundled with this build of agentmark. `
-                        + 'Use backend="fixture" for in-memory testing while the macOS bridge ships.',
-                    isError: true,
+                if (process.platform !== 'darwin') {
+                    return {
+                        text:
+                            `Backend "macos_axapi" requires macOS (process.platform=='darwin'). `
+                            + `Current platform: ${process.platform}. Use backend="fixture" for `
+                            + `in-memory testing, or run agentmark on a Mac host.`,
+                        isError: true,
+                    }
                 }
+                backend = new MacosAxapiBackend({ bridgePath })
+                break
             default:
                 return { text: `Unknown desktop backend: ${requested}`, isError: true }
         }

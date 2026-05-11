@@ -98,10 +98,15 @@ describe('MCP — desktop tools', () => {
         expect(result.text).toMatch(/requires Windows/i)
     })
 
-    it('agentmark_desktop_open with macos_axapi still reports not-yet-bundled (bridge ships later)', async () => {
+    it('agentmark_desktop_open with macos_axapi refuses to start on non-macOS platforms', async () => {
+        // On non-macOS: clear OS-mismatch error.
+        // On macOS: the dispatcher would attempt to spawn the bridge; that
+        // path is exercised in test/desktop/macos-axapi-backend.test.ts.
+        if (process.platform === 'darwin') return
+
         const result = await dispatch(state, 'agentmark_desktop_open', { backend: 'macos_axapi' })
         expect(result.isError).toBe(true)
-        expect(result.text).toContain('not yet bundled')
+        expect(result.text).toMatch(/requires macOS/i)
     })
 
     it('agentmark_desktop_snapshot returns a valid v0.4 desktop snapshot', async () => {

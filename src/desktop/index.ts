@@ -11,6 +11,9 @@ export type { FixtureBackendOptions } from './fixture-backend'
 export { WindowsUiaBackend } from './windows-uia-backend'
 export type { WindowsUiaBackendOptions } from './windows-uia-backend'
 
+export { MacosAxapiBackend } from './macos-axapi-backend'
+export type { MacosAxapiBackendOptions } from './macos-axapi-backend'
+
 export type {
     DesktopCaptureBackend,
     CaptureDesktopOptions,

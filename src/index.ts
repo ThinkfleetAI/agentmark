@@ -214,11 +214,18 @@ export type {
 
 // ── v0.4 spec / v0.12 lib: Desktop support (kind: 'desktop') ─────────────
 
-export { convertDesktop, FixtureBackend, WindowsUiaBackend, buildDesktopBody } from './desktop'
+export {
+    convertDesktop,
+    FixtureBackend,
+    WindowsUiaBackend,
+    MacosAxapiBackend,
+    buildDesktopBody,
+} from './desktop'
 export type {
     ConvertDesktopOptions,
     FixtureBackendOptions,
     WindowsUiaBackendOptions,
+    MacosAxapiBackendOptions,
     BuildDesktopBodyResult,
     DesktopCaptureBackend,
     CaptureDesktopOptions,
