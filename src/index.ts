@@ -8,6 +8,7 @@ export type {
     SnapshotSource,
     SnapshotKind,
     DocumentMeta,
+    DesktopMeta,
     PageState,
     ActionType,
     ActionCost,

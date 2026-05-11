@@ -5,20 +5,22 @@
  * Producers build an `Snapshot`; serializers turn it into the wire format.
  */
 
-export const AGENTMARK_VERSION = '0.3' as const
+export const AGENTMARK_VERSION = '0.4' as const
 
 /** Spec versions this implementation can validate against. */
-export const SUPPORTED_SPEC_VERSIONS = ['0.1', '0.2', '0.3'] as const
+export const SUPPORTED_SPEC_VERSIONS = ['0.1', '0.2', '0.3', '0.4'] as const
 
 // ──────────────────────────────────────────────────────────────────────────
 // Frontmatter envelope
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Discriminator. v0.2 added `webpage|document|form`; v0.3 added `audio|video`.
+ * Discriminator. v0.2 added `webpage|document|form`; v0.3 added `audio|video`;
+ * v0.4 adds `desktop` for native application surfaces captured via OS
+ * accessibility APIs (Windows UIA, macOS AXAPI, Linux AT-SPI).
  * Defaults to 'webpage' when omitted (v0.1 compatibility).
  */
-export type SnapshotKind = 'webpage' | 'document' | 'form' | 'audio' | 'video'
+export type SnapshotKind = 'webpage' | 'document' | 'form' | 'audio' | 'video' | 'desktop'
 
 export interface Snapshot {
     /** Spec version, e.g. "0.1" or "0.2" */
@@ -57,6 +59,9 @@ export interface Snapshot {
 
     /** Speaker labels keyed by ID (v0.3+, audio/video). Map ID → display name. */
     speakers?: Record<string, string>
+
+    /** Desktop-specific metadata (v0.4+, populated when kind === 'desktop'). */
+    desktop_meta?: DesktopMeta
 
     /**
      * Detected signatures on the document, keyed by signature ID
@@ -116,6 +121,39 @@ export interface DocumentMeta {
     format_version?: string
     /** Whether the source was OCR'd (i.e. originally a scan). */
     ocr_used?: boolean
+}
+
+/**
+ * Desktop metadata captured from OS accessibility APIs (v0.4+). Producer
+ * walks the platform's accessibility tree (Windows UIA, macOS AXAPI, Linux
+ * AT-SPI) and emits a Snapshot describing one or more application windows.
+ * Interactive elements are exposed through the standard `actions` map; the
+ * fields here are descriptive metadata only.
+ *
+ * All fields are optional — backends populate what they can.
+ */
+export interface DesktopMeta {
+    /** Operating system the snapshot was captured on. */
+    platform?: 'windows' | 'macos' | 'linux'
+    /** Process name owning the focused window (e.g. 'EXCEL.EXE', 'Slack'). */
+    process_name?: string
+    /** OS process id of the captured window's owning process. */
+    process_id?: number
+    /** Toolkit / window class hint — Windows: UIA control type or Win32
+     *  class (e.g. 'XLMAIN'); macOS: AXSubrole; Linux: AT-SPI role. */
+    window_class?: string
+    /** Stable accessibility identifier of the currently focused element.
+     *  On Windows this is typically the UIA AutomationId; on macOS the
+     *  AXIdentifier; on Linux the AT-SPI accessible-id. */
+    focused_element_id?: string
+    /** Accessibility backend that produced the snapshot. Helps consumers
+     *  understand the fidelity of the captured data. */
+    a11y_backend?: 'windows_uia' | 'macos_axapi' | 'linux_atspi' | 'vision_fallback' | string
+    /** Maximum depth of the captured accessibility tree (debugging /
+     *  cardinality hint for renderers). */
+    tree_depth?: number
+    /** Total interactive elements extracted into the `actions` map. */
+    element_count?: number
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -277,6 +315,15 @@ export type BodyTagKind =
     /** v0.3+: video frame reference. Payload is a frame ID (`f_42`) whose
      *  thumbnail + caption live in the `media` map. */
     | 'FRAME'
+    /** v0.4+: window boundary marker for `kind: 'desktop'`. Payload is a
+     *  window identifier (e.g. `w_1`) — used when a single snapshot spans
+     *  multiple application windows. */
+    | 'WINDOW'
+    /** v0.4+: non-interactive accessibility element reference for
+     *  `kind: 'desktop'`. Payload is an element ID (e.g. `e_42`) that
+     *  matches the element's AutomationId / AXIdentifier. Interactive
+     *  controls (buttons, inputs, etc.) continue to use ACTION / INPUT. */
+    | 'ELEMENT'
 
 /**
  * Descriptor for a detected signature. Lives in `Snapshot.signatures` keyed

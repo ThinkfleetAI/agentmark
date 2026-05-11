@@ -42,7 +42,7 @@ describe('convertAudio', () => {
 
         const snap = parseSnapshot(agentmark)
         expect(snap.kind).toBe('audio')
-        expect(snap.agentmark).toBe('0.3')
+        expect(snap.agentmark).toBe('0.4')
         expect(snap.media_meta?.duration_sec).toBe(12.5)
         expect(snap.media_meta?.transcribed).toBe(true)
         expect(snap.media_meta?.transcription_backend).toBe('fake_transcribe')

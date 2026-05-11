@@ -14,15 +14,16 @@ const validatorCache = new Map<string, ValidateFunction>()
  * Unknown versions fall back to the highest known schema and emit a warning
  * elsewhere — see `validateSnapshot` cross-field check 2e.
  */
-function resolveSchemaVersion(declared: string): '0.1' | '0.2' | '0.3' {
+function resolveSchemaVersion(declared: string): '0.1' | '0.2' | '0.3' | '0.4' {
     const [major, minor] = declared.split('.')
     const minorMajor = `${major}.${minor}`
     if (minorMajor === '0.1') return '0.1'
     if (minorMajor === '0.2') return '0.2'
-    return '0.3'
+    if (minorMajor === '0.3') return '0.3'
+    return '0.4'
 }
 
-function loadValidator(version: '0.1' | '0.2' | '0.3'): ValidateFunction {
+function loadValidator(version: '0.1' | '0.2' | '0.3' | '0.4'): ValidateFunction {
     const cached = validatorCache.get(version)
     if (cached) return cached
 
@@ -95,7 +96,9 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     //   PAGE    — v0.2, page boundary marker (p_n)
     //   TIME    — v0.3, timestamp marker for audio/video (t_seconds)
     //   SPEAKER — v0.3, speaker label (resolves to envelope.speakers map)
-    const STRUCTURAL_TAGS = new Set(['PAGE', 'TIME', 'SPEAKER'])
+    //   WINDOW  — v0.4, window boundary marker for desktop (w_n)
+    //   ELEMENT — v0.4, non-interactive accessibility element ref (e_n)
+    const STRUCTURAL_TAGS = new Set(['PAGE', 'TIME', 'SPEAKER', 'WINDOW', 'ELEMENT'])
 
     const signatureIds = new Set(Object.keys(snapshot.signatures ?? {}))
 
@@ -188,11 +191,11 @@ export function validateSnapshot(snapshot: Snapshot): ValidationResult {
     // 2e. version compatibility
     const major = parseInt(snapshot.agentmark.split('.')[0], 10)
     const minor = parseInt(snapshot.agentmark.split('.')[1] ?? '0', 10)
-    if (major > 0 || minor > 2) {
+    if (major > 0 || minor > 4) {
         warnings.push({
             severity: 'warning',
             path: '/agentmark',
-            message: `This validator implements v0.1 + v0.2; snapshot declares v${snapshot.agentmark}. Validated against v0.2 schema.`,
+            message: `This validator implements v0.1 + v0.2 + v0.3 + v0.4; snapshot declares v${snapshot.agentmark}. Validated against v0.4 schema.`,
         })
     }
 
