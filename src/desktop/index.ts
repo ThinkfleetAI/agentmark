@@ -8,6 +8,9 @@ export type { ConvertDesktopOptions } from './desktop-converter'
 export { FixtureBackend } from './fixture-backend'
 export type { FixtureBackendOptions } from './fixture-backend'
 
+export { WindowsUiaBackend } from './windows-uia-backend'
+export type { WindowsUiaBackendOptions } from './windows-uia-backend'
+
 export type {
     DesktopCaptureBackend,
     CaptureDesktopOptions,
