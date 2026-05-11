@@ -45,6 +45,7 @@ import type {
     CaptureDesktopOptions,
     DesktopCapture,
     DesktopCaptureBackend,
+    DesktopTargetSummary,
     ExecuteDesktopAction,
     ExecuteDesktopOptions,
     ExecuteDesktopResult,
@@ -117,6 +118,20 @@ export class WindowsUiaBackend implements DesktopCaptureBackend {
     }
 
     // ── DesktopCaptureBackend implementation ─────────────────────────
+
+    async listTargets(): Promise<DesktopTargetSummary[]> {
+        await this.ensureStarted()
+        const result = (await this.call('list_windows', {})) as { windows?: RawWindowSummary[] }
+        const raw = result?.windows ?? []
+        return raw.map((w) => ({
+            window_id: w.windowId,
+            process_name: w.processName ?? undefined,
+            process_id: w.processId ?? undefined,
+            window_title: w.windowTitle,
+            window_class: w.windowClass ?? undefined,
+            has_focus: !!w.hasFocus,
+        }))
+    }
 
     async capture(opts: CaptureDesktopOptions = {}): Promise<DesktopCapture> {
         await this.ensureStarted()
@@ -415,6 +430,15 @@ function resolveBridgePath(): string {
 // ──────────────────────────────────────────────────────────────────────
 // Wire format — raw shapes returned by the bridge
 // ──────────────────────────────────────────────────────────────────────
+
+interface RawWindowSummary {
+    windowId: string
+    processName?: string | null
+    processId?: number | null
+    windowTitle: string
+    windowClass?: string | null
+    hasFocus: boolean
+}
 
 interface RawDesktopCapture {
     platform: 'windows' | 'macos' | 'linux'

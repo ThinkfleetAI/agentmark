@@ -98,6 +98,8 @@ export async function dispatch(
                 return await openDesktop(state, args)
             case 'agentmark_desktop_close':
                 return await closeDesktop(state, args)
+            case 'agentmark_desktop_list_targets':
+                return await desktopListTargets(state, args)
             case 'agentmark_desktop_snapshot':
                 return await desktopSnapshot(state, args)
             case 'agentmark_desktop_execute':
@@ -393,6 +395,15 @@ async function closeDesktop(state: DispatcherState, args: Record<string, unknown
     await session.backend.close?.()
     state.desktops.delete(id)
     return { text: `Desktop session ${id} closed.` }
+}
+
+async function desktopListTargets(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
+    const id = requireString(args, 'desktop_id')
+    const session = requireDesktop(state, id)
+    const windows = await session.backend.listTargets()
+    return {
+        text: JSON.stringify({ windows }, null, 2),
+    }
 }
 
 async function desktopSnapshot(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {

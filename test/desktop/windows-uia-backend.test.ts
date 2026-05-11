@@ -42,6 +42,19 @@ describe('WindowsUiaBackend', () => {
         expect(() => new WindowsUiaBackend({ bridgePath: FAKE_BRIDGE })).toThrow(/requires Windows/)
     })
 
+    it('listTargets maps the bridge `windows` array to snake_case DesktopTargetSummary', async () => {
+        backend = makeBackend()
+        const targets = await backend.listTargets()
+        expect(targets.length).toBeGreaterThan(0)
+        const w = targets[0]
+        // The fake bridge ships one synthetic window.
+        expect(w.window_id).toMatch(/^hwnd:/)
+        expect(w.window_title).toBe('Fake Window 1')
+        expect(w.process_name).toBe('FakeApp.exe')
+        expect(w.process_id).toBe(42)
+        expect(w.has_focus).toBe(true)
+    })
+
     it('captures via the bridge and maps the response to DesktopCapture', async () => {
         backend = makeBackend()
         const cap = await backend.capture({})
