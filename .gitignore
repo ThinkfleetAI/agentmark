@@ -25,6 +25,13 @@ obj/
 *.user
 *.userprefs
 
+# Swift Package Manager output (used by apps/agent-runner/bridges/macos)
+.build/
+.swiftpm/
+Packages/
+*.xcodeproj
+DerivedData/
+
 # JetBrains
 .idea/
 *.iml
