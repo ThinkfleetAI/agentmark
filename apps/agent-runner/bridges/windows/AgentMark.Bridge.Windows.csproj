@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>AgentMark.Bridge.Windows</RootNamespace>
+    <AssemblyName>agentmark-bridge-windows</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Build to a predictable output path so the Node-side spawn knows
+         where to find the exe. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- The bridge talks to UIA (Windows accessibility API). FlaUI is a
+         maintained MIT-licensed wrapper around UIA. -->
+    <Description>AgentMark Windows UIA bridge — accessibility-tree capture and action execution for kind:'desktop' snapshots.</Description>
+    <Authors>ThinkFleet</Authors>
+    <Company>ThinkFleet</Company>
+    <Product>AgentMark Desktop</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlaUI.Core" Version="5.0.0" />
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
+  </ItemGroup>
+
+</Project>
