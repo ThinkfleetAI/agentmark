@@ -27,12 +27,43 @@ afterEach(async () => {
 })
 
 describe('MCP — desktop tools', () => {
-    it('registers all four desktop tools in ALL_TOOLS', () => {
+    it('registers all five desktop tools in ALL_TOOLS', () => {
         const names = ALL_TOOLS.map(t => t.name)
         expect(names).toContain('agentmark_desktop_open')
         expect(names).toContain('agentmark_desktop_close')
+        expect(names).toContain('agentmark_desktop_list_targets')
         expect(names).toContain('agentmark_desktop_snapshot')
         expect(names).toContain('agentmark_desktop_execute')
+    })
+
+    it('agentmark_desktop_list_targets returns the fixture preset windows', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        const result = await dispatch(state, 'agentmark_desktop_list_targets', { desktop_id })
+        expect(result.isError).toBeFalsy()
+
+        const body = JSON.parse(result.text)
+        expect(Array.isArray(body.windows)).toBe(true)
+        // Fixture ships two preset shapes: excel_blank and nowcerts_customer.
+        // Each is exposed under two keys (excel + excel_blank; nowcerts + nowcerts_customer)
+        // so length is 4. Don't over-constrain on the exact number; just
+        // require both preset families are represented.
+        const titles = body.windows.map((w: { window_title: string }) => w.window_title)
+        expect(titles.some((t: string) => t.includes('Excel'))).toBe(true)
+        expect(titles.some((t: string) => t.includes('NowCerts'))).toBe(true)
+        // Every entry has the right shape.
+        for (const w of body.windows) {
+            expect(w).toHaveProperty('window_id')
+            expect(w).toHaveProperty('window_title')
+            expect(typeof w.has_focus).toBe('boolean')
+        }
+    })
+
+    it('agentmark_desktop_list_targets errors on unknown desktop_id', async () => {
+        const result = await dispatch(state, 'agentmark_desktop_list_targets', { desktop_id: 'dt_missing' })
+        expect(result.isError).toBe(true)
+        expect(result.text).toContain('Unknown desktop_id')
     })
 
     it('agentmark_desktop_open with no args defaults to the fixture backend', async () => {

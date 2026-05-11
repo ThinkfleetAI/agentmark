@@ -18,6 +18,7 @@ import type {
     DesktopCaptureBackend,
     CaptureDesktopOptions,
     DesktopElement,
+    DesktopTargetSummary,
     ExecuteDesktopOptions,
     ExecuteDesktopResult,
 } from './types'
@@ -49,6 +50,22 @@ export class FixtureBackend implements DesktopCaptureBackend {
         this.presets = { ...DEFAULT_PRESETS, ...(opts.presets ?? {}) }
         this.defaultPreset = opts.defaultPreset ?? 'excel_blank'
         this.latencyMs = opts.latencyMs ?? 0
+    }
+
+    async listTargets(): Promise<DesktopTargetSummary[]> {
+        if (this.latencyMs) await delay(this.latencyMs)
+
+        // One summary per registered preset. Use the preset key as
+        // window_id so a subsequent capture({ target: { window_id: key }})
+        // resolves back to the same preset.
+        return Object.entries(this.presets).map(([key, cap]) => ({
+            window_id: key,
+            process_name: cap.process_name,
+            process_id: cap.process_id,
+            window_title: cap.window_title,
+            window_class: cap.window_class,
+            has_focus: key === this.defaultPreset,
+        }))
     }
 
     async capture(opts: CaptureDesktopOptions = {}): Promise<DesktopCapture> {

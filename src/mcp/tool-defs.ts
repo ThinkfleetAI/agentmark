@@ -323,6 +323,23 @@ const DESKTOP_TOOLS: McpToolDef[] = [
         },
     },
     {
+        name: 'agentmark_desktop_list_targets',
+        description:
+            'Enumerate top-level windows the backend can see. Returns one '
+            + 'lightweight summary per window (process_name, process_id, '
+            + 'window_title, window_class, window_id, has_focus) without '
+            + 'walking the full element tree. Use this to let the user (or '
+            + 'agent) pick a window before calling agentmark_desktop_snapshot '
+            + 'with that specific window_id.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+            },
+            required: ['desktop_id'],
+        },
+    },
+    {
         name: 'agentmark_desktop_snapshot',
         description:
             'Capture an AgentMark snapshot of a desktop window. If `target` '

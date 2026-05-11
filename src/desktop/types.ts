@@ -23,6 +23,11 @@ export interface DesktopCaptureBackend {
      *  or `fixture` for tests. */
     readonly name: string
 
+    /** Enumerate top-level windows the backend can see. Returns lightweight
+     *  summaries (no element tree) so an agent can pick a target before
+     *  paying for the full capture. */
+    listTargets(): Promise<DesktopTargetSummary[]>
+
     /** Capture the current state of a target window/application. */
     capture(opts: CaptureDesktopOptions): Promise<DesktopCapture>
 
@@ -32,6 +37,23 @@ export interface DesktopCaptureBackend {
 
     /** Optional teardown — release native handles, close sidecar process. */
     close?(): Promise<void>
+}
+
+/** Lightweight summary of one open window — what `listTargets()` returns. */
+export interface DesktopTargetSummary {
+    /** Opaque handle the caller passes back as `target.window_id` to
+     *  capture this specific window. Format is backend-defined
+     *  (Windows: `hwnd:0x...`; macOS: `axapi:<pid>:<index>`; fixture:
+     *  the preset key). */
+    window_id: string
+    process_name?: string
+    process_id?: number
+    window_title: string
+    /** Toolkit / class hint — Windows class name (e.g. `XLMAIN`),
+     *  macOS AX role (e.g. `AXWindow`), useful for UI inspectors. */
+    window_class?: string
+    /** True when this window currently has keyboard focus. */
+    has_focus: boolean
 }
 
 /** Identifies a target window. Backends accept any combination they can
