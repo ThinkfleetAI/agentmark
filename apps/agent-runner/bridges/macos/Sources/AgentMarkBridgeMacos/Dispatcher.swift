@@ -7,22 +7,38 @@ import Foundation
 final class Dispatcher {
     private let bridgeVersion: String
 
+    // AXAPI is fine to call from the main thread; we don't currently
+    // need a dedicated serial queue. If we ever do, this is where the
+    // dispatch boundary goes.
+    private lazy var capturer = AxapiCapturer()
+
     init(bridgeVersion: String) {
         self.bridgeVersion = bridgeVersion
     }
 
     func dispatch(request: JsonRpcRequest) throws -> Any {
-        switch request.method {
-        case "ping":
-            return handlePing()
-        case "capabilities":
-            return handleCapabilities()
-        default:
-            throw RpcError(
-                code: .methodNotFound,
-                message: "Unknown method: \(request.method). Supported: ping, capabilities.",
-                requestId: request.id
-            )
+        do {
+            switch request.method {
+            case "ping":
+                return handlePing()
+            case "capabilities":
+                return handleCapabilities()
+            case "list_windows":
+                return try handleListWindows()
+            case "capture":
+                return try handleCapture(params: request.params)
+            case "execute":
+                return try handleExecute(params: request.params)
+            default:
+                throw RpcError(
+                    code: .methodNotFound,
+                    message: "Unknown method: \(request.method). Supported: ping, capabilities, list_windows, capture, execute.",
+                    requestId: request.id
+                )
+            }
+        } catch var rpcError as RpcError {
+            rpcError.requestId = request.id
+            throw rpcError
         }
     }
 
@@ -39,9 +55,51 @@ final class Dispatcher {
         return [
             "bridge": "agentmark-bridge-macos",
             "version": bridgeVersion,
-            "methods": ["ping", "capabilities"],
+            "methods": ["ping", "capabilities", "list_windows", "capture", "execute"],
             "axapiProvider": "Accessibility (AXAPI)",
             "platform": "macos",
+            "accessibilityGranted": AccessibilityPermission.isGranted,
         ] as [String: Any]
+    }
+
+    private func handleListWindows() throws -> Any {
+        let windows = try capturer.listWindows()
+        return ["windows": windows] as [String: Any]
+    }
+
+    private func handleCapture(params: JsonValue?) throws -> Any {
+        var req = AxapiCapturer.CaptureRequest()
+        if let p = params {
+            if let s = p.string("processName") { req.processName = s }
+            if let i = p.int("processId") { req.processId = i }
+            if let s = p.string("windowTitle") { req.windowTitle = s }
+            if let s = p.string("windowId") { req.windowId = s }
+            if let i = p.int("maxDepth") { req.maxDepth = i }
+            if let b = p.bool("includeHidden") { req.includeHidden = b }
+            if let i = p.int("timeoutMs") { req.timeoutMs = i }
+            if let i = p.int("maxElements") { req.maxElements = i }
+        }
+        return try capturer.capture(req)
+    }
+
+    private func handleExecute(params: JsonValue?) throws -> Any {
+        guard let p = params,
+              let elementId = p.string("elementId"), !elementId.isEmpty else {
+            throw RpcError(code: .invalidParams, message: "execute requires `elementId`.")
+        }
+        var req = AxapiCapturer.ExecuteRequest()
+        req.elementId = elementId
+        req.actionType = p.string("actionType") ?? "click"
+        req.text = p.string("text")
+        req.value = p.string("value")
+        req.checked = p.bool("checked")
+        req.expanded = p.bool("expanded")
+        req.key = p.string("key")
+        if let modsAny = p.dict?["modifiers"], case .array(let arr) = JsonValue.fromAny(modsAny) {
+            req.modifiers = arr.compactMap { $0 as? String }
+        }
+        req.clearFirst = p.bool("clearFirst") ?? false
+        if let i = p.int("timeoutMs") { req.timeoutMs = i }
+        return try capturer.execute(req)
     }
 }
