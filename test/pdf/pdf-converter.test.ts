@@ -183,7 +183,7 @@ describe('convertPdf', () => {
         // Snapshot is parseable + validates against v0.2 schema
         const snap = parseSnapshot(agentmark)
         expect(snap.kind).toBe('document')
-        expect(snap.agentmark).toBe('0.3')
+        expect(snap.agentmark).toBe('0.4')
         expect(snap.url).toBe('file:///tmp/annual-report.pdf')
         expect(snap.title).toBe('Annual Report')
 
