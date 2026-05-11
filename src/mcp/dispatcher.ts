@@ -12,21 +12,29 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
     createBrowser,
+    convertDesktop,
+    FixtureBackend,
     openPdfDocument,
     isAgentMarkError,
+    parseSnapshot,
     PopplerRenderBackend,
     TesseractOcrBackend,
     type Browser,
+    type DesktopCaptureBackend,
+    type DesktopTarget,
+    type ExecuteDesktopAction,
+    type KeyModifier,
     type Page,
     type PdfDocument,
     type OcrPipelineOptions,
 } from '../index'
-import { generateSessionId, type BrowserSession, type PdfSession } from './types'
+import { generateSessionId, type BrowserSession, type DesktopSession, type PdfSession } from './types'
 
 export interface DispatcherState {
     browsers: Map<string, BrowserSession>
     pages: Map<string, { browserId: string; page: Page }>
     pdfs: Map<string, PdfSession>
+    desktops: Map<string, DesktopSession>
 }
 
 export function createDispatcherState(): DispatcherState {
@@ -34,6 +42,7 @@ export function createDispatcherState(): DispatcherState {
         browsers: new Map(),
         pages: new Map(),
         pdfs: new Map(),
+        desktops: new Map(),
     }
 }
 
@@ -82,6 +91,16 @@ export async function dispatch(
                 return await pdfSave(state, args)
             case 'agentmark_pdf_reset':
                 return await pdfReset(state, args)
+
+            // ── Desktop ──────────────────────────────────────────────────
+            case 'agentmark_desktop_open':
+                return await openDesktop(state, args)
+            case 'agentmark_desktop_close':
+                return await closeDesktop(state, args)
+            case 'agentmark_desktop_snapshot':
+                return await desktopSnapshot(state, args)
+            case 'agentmark_desktop_execute':
+                return await desktopExecute(state, args)
 
             // ── Meta ─────────────────────────────────────────────────────
             case 'agentmark_list_sessions':
@@ -313,6 +332,194 @@ async function pdfReset(state: DispatcherState, args: Record<string, unknown>): 
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Desktop tool handlers
+// ──────────────────────────────────────────────────────────────────────────
+
+async function openDesktop(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
+    const requested = typeof args.backend === 'string' ? args.backend : 'fixture'
+    let backend: DesktopCaptureBackend
+    switch (requested) {
+        case 'fixture':
+            backend = new FixtureBackend()
+            break
+        case 'windows_uia':
+        case 'macos_axapi':
+            return {
+                text:
+                    `Backend "${requested}" is not yet bundled with this build of agentmark. `
+                    + 'Run agentmark_desktop_open with backend="fixture" to use the in-memory '
+                    + 'preset trees. Real OS bridges land in subsequent releases.',
+                isError: true,
+            }
+        default:
+            return { text: `Unknown desktop backend: ${requested}`, isError: true }
+    }
+
+    const id = generateSessionId('dt')
+    state.desktops.set(id, {
+        id,
+        backend,
+        createdAt: new Date(),
+    })
+    return {
+        text: JSON.stringify({ desktop_id: id, backend: requested }, null, 2),
+    }
+}
+
+async function closeDesktop(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
+    const id = requireString(args, 'desktop_id')
+    const session = state.desktops.get(id)
+    if (!session) return { text: `Unknown desktop_id: ${id}`, isError: true }
+    await session.backend.close?.()
+    state.desktops.delete(id)
+    return { text: `Desktop session ${id} closed.` }
+}
+
+async function desktopSnapshot(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
+    const id = requireString(args, 'desktop_id')
+    const session = requireDesktop(state, id)
+
+    const target = parseTarget(args.target)
+    const maxDepth = typeof args.max_depth === 'number' ? args.max_depth : undefined
+    const includeHidden = args.include_hidden === true
+    const timeoutMs = typeof args.timeout_ms === 'number' ? args.timeout_ms : undefined
+
+    const { agentmark, binding } = await convertDesktop({
+        backend: session.backend,
+        target,
+        maxDepth,
+        includeHidden,
+        timeoutMs,
+    })
+
+    // Cache binding + action types so subsequent _execute can resolve.
+    session.lastTarget = target
+    session.lastBinding = binding
+    const snap = parseSnapshot(agentmark)
+    session.lastActionTypes = new Map(
+        Object.entries(snap.actions ?? {}).map(([k, def]) => [k, def.type]),
+    )
+
+    return { text: agentmark }
+}
+
+async function desktopExecute(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
+    const id = requireString(args, 'desktop_id')
+    const actionId = requireString(args, 'action_id')
+    const session = requireDesktop(state, id)
+
+    if (!session.lastBinding || !session.lastActionTypes) {
+        return {
+            text:
+                `No cached snapshot for desktop_id ${id}. Call `
+                + `agentmark_desktop_snapshot first so the action_id can be resolved.`,
+            isError: true,
+        }
+    }
+
+    const elementId = session.lastBinding.get(actionId)
+    if (!elementId) {
+        return { text: `Unknown action_id: ${actionId}`, isError: true }
+    }
+
+    const actionType = session.lastActionTypes.get(actionId) ?? 'click'
+    const value = args.value
+    const modifiers = parseModifiers(args.modifiers)
+    const clearFirst = args.clear_first === true
+
+    const action = buildExecuteAction(actionType, elementId, value, modifiers, clearFirst)
+    const result = await session.backend.execute({
+        target: session.lastTarget,
+        action,
+    })
+
+    return {
+        text: JSON.stringify(
+            {
+                action_id: actionId,
+                action_type: actionType,
+                element_id: elementId,
+                ok: result.ok,
+                ...(result.message !== undefined ? { message: result.message } : {}),
+                ...(result.new_value !== undefined ? { new_value: result.new_value } : {}),
+            },
+            null,
+            2,
+        ),
+        isError: !result.ok,
+    }
+}
+
+function parseTarget(input: unknown): DesktopTarget | undefined {
+    if (!input || typeof input !== 'object') return undefined
+    const t = input as Record<string, unknown>
+    const out: DesktopTarget = {}
+    if (typeof t.process_name === 'string') out.process_name = t.process_name
+    if (typeof t.process_id === 'number') out.process_id = t.process_id
+    if (typeof t.window_title === 'string') out.window_title = t.window_title
+    if (typeof t.window_id === 'string') out.window_id = t.window_id
+    return Object.keys(out).length > 0 ? out : undefined
+}
+
+function parseModifiers(input: unknown): KeyModifier[] | undefined {
+    if (!Array.isArray(input)) return undefined
+    const allowed: ReadonlySet<KeyModifier> = new Set(['ctrl', 'alt', 'shift', 'meta', 'win'])
+    const out: KeyModifier[] = []
+    for (const m of input) {
+        if (typeof m === 'string' && allowed.has(m as KeyModifier)) out.push(m as KeyModifier)
+    }
+    return out.length > 0 ? out : undefined
+}
+
+function buildExecuteAction(
+    actionType: string,
+    elementId: string,
+    value: unknown,
+    modifiers: KeyModifier[] | undefined,
+    clearFirst: boolean,
+): ExecuteDesktopAction {
+    switch (actionType) {
+        case 'type':
+            return {
+                type: 'type',
+                element_id: elementId,
+                text: typeof value === 'string' ? value : String(value ?? ''),
+                clear_first: clearFirst,
+            }
+        case 'check':
+            return {
+                type: 'check',
+                element_id: elementId,
+                checked: value === true || value === 'true',
+            }
+        case 'select':
+        case 'multi_select':
+            return {
+                type: 'select',
+                element_id: elementId,
+                value: typeof value === 'string' ? value : String(value ?? ''),
+            }
+        case 'range':
+            return {
+                type: 'type',
+                element_id: elementId,
+                text: typeof value === 'number' ? String(value) : String(value ?? ''),
+            }
+        case 'key':
+            return {
+                type: 'key',
+                element_id: elementId,
+                key: typeof value === 'string' ? value : String(value ?? ''),
+                modifiers,
+            }
+        case 'scroll_to':
+            return { type: 'scroll_to', element_id: elementId }
+        default:
+            return { type: 'click', element_id: elementId }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Meta
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -329,6 +536,12 @@ function listSessions(state: DispatcherState): DispatchResult {
                     doc_id: s.id,
                     field_count: s.document.fields.size,
                     pending: s.document.pending.size,
+                    created_at: s.createdAt.toISOString(),
+                })),
+                desktops: Array.from(state.desktops.values()).map((s) => ({
+                    desktop_id: s.id,
+                    backend: s.backend.name,
+                    has_snapshot: s.lastBinding !== undefined,
                     created_at: s.createdAt.toISOString(),
                 })),
             },
@@ -349,10 +562,14 @@ export async function disposeAll(state: DispatcherState): Promise<void> {
     for (const session of state.pdfs.values()) {
         closers.push(session.document.close().catch(() => {}))
     }
+    for (const session of state.desktops.values()) {
+        if (session.backend.close) closers.push(session.backend.close().catch(() => {}))
+    }
     await Promise.allSettled(closers)
     state.browsers.clear()
     state.pages.clear()
     state.pdfs.clear()
+    state.desktops.clear()
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -377,6 +594,12 @@ function requirePdf(state: DispatcherState, docId: string): PdfDocument {
     const session = state.pdfs.get(docId)
     if (!session) throw new Error(`Unknown doc_id: ${docId}`)
     return session.document
+}
+
+function requireDesktop(state: DispatcherState, desktopId: string): DesktopSession {
+    const session = state.desktops.get(desktopId)
+    if (!session) throw new Error(`Unknown desktop_id: ${desktopId}`)
+    return session
 }
 
 /**

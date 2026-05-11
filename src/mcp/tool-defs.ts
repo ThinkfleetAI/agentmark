@@ -276,6 +276,149 @@ const PDF_TOOLS: McpToolDef[] = [
 ]
 
 // ──────────────────────────────────────────────────────────────────────────
+// Desktop application tools (v0.4)
+// ──────────────────────────────────────────────────────────────────────────
+
+const DESKTOP_TOOLS: McpToolDef[] = [
+    {
+        name: 'agentmark_desktop_open',
+        description:
+            'Attach to a desktop accessibility-tree backend and return a '
+            + 'desktop_id. Backends:\n'
+            + '  - "fixture" (default): pre-baked Excel + NowCerts trees, '
+            + 'works on any OS — useful for testing without a real bridge '
+            + 'installed.\n'
+            + '  - "windows_uia": connects to the Windows FlaUI sidecar '
+            + 'process (requires the bridge running on the same machine).\n'
+            + '  - "macos_axapi": connects to the macOS AXAPI sidecar '
+            + '(requires the bridge + Accessibility permission granted).\n'
+            + '\nThe session lives for the duration of the MCP connection '
+            + 'unless explicitly closed.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                backend: {
+                    type: 'string',
+                    enum: ['fixture', 'windows_uia', 'macos_axapi'],
+                    description: 'Which backend to use. Default: "fixture".',
+                },
+                bridge_url: {
+                    type: 'string',
+                    description:
+                        'Override the bridge WebSocket URL (for non-fixture '
+                        + 'backends). Default: ws://127.0.0.1:9325/agentmark-bridge.',
+                },
+            },
+        },
+    },
+    {
+        name: 'agentmark_desktop_close',
+        description: 'Close a desktop session and release the bridge connection.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+            },
+            required: ['desktop_id'],
+        },
+    },
+    {
+        name: 'agentmark_desktop_snapshot',
+        description:
+            'Capture an AgentMark snapshot of a desktop window. If `target` '
+            + 'is omitted, the currently focused window is captured. The '
+            + 'result is cached on the session so subsequent '
+            + 'agentmark_desktop_execute calls can resolve action IDs back '
+            + 'to native accessibility element IDs.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                target: {
+                    type: 'object',
+                    description:
+                        'Which window to capture. Provide any combination; '
+                        + 'the backend resolves whichever it can. Omit to '
+                        + 'capture the focused window.',
+                    properties: {
+                        process_name: { type: 'string' },
+                        process_id: { type: 'number' },
+                        window_title: { type: 'string' },
+                        window_id: {
+                            type: 'string',
+                            description:
+                                'Backend-defined opaque handle returned by a '
+                                + 'previous snapshot. Most precise targeting.',
+                        },
+                    },
+                },
+                max_depth: {
+                    type: 'number',
+                    description:
+                        'Maximum accessibility-tree depth to traverse. '
+                        + 'Default: 12.',
+                },
+                include_hidden: {
+                    type: 'boolean',
+                    description:
+                        'Include off-screen / invisible elements. Default: false.',
+                },
+                timeout_ms: {
+                    type: 'number',
+                    description: 'Per-capture timeout in milliseconds. Default: 5000.',
+                },
+            },
+            required: ['desktop_id'],
+        },
+    },
+    {
+        name: 'agentmark_desktop_execute',
+        description:
+            'Execute an action against the most recent snapshot of a '
+            + 'desktop session. `action_id` is one of the keys from the '
+            + 'snapshot\'s `actions` map (e.g. `act_btn_save`). The MCP '
+            + 'server resolves it to the underlying element via the '
+            + 'ActionBinding captured at snapshot time.\n'
+            + '\nValue semantics by action type:\n'
+            + '  - click / focus / scroll_to: omit `value`\n'
+            + '  - type: string (text to enter)\n'
+            + '  - check: boolean (target state)\n'
+            + '  - select: string (option value or label)\n'
+            + '  - key: string (key name, e.g. "Enter", "F5") + optional '
+            + '`modifiers` array',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                action_id: { type: 'string' },
+                value: {
+                    description:
+                        'Value for input-style actions. Type depends on the '
+                        + 'action: string, boolean, etc.',
+                },
+                modifiers: {
+                    type: 'array',
+                    items: {
+                        type: 'string',
+                        enum: ['ctrl', 'alt', 'shift', 'meta', 'win'],
+                    },
+                    description:
+                        'Key modifiers for `key` actions (or holding modifiers '
+                        + 'during a click).',
+                },
+                clear_first: {
+                    type: 'boolean',
+                    description:
+                        'For `type` actions, clear the existing value before '
+                        + 'typing. Default: false.',
+                },
+            },
+            required: ['desktop_id', 'action_id'],
+        },
+    },
+]
+
+// ──────────────────────────────────────────────────────────────────────────
 // Session inspection
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -283,8 +426,9 @@ const META_TOOLS: McpToolDef[] = [
     {
         name: 'agentmark_list_sessions',
         description:
-            'List all currently open browsers, pages, and PDF documents '
-            + 'with their IDs. Useful for debugging or recovering a stuck session.',
+            'List all currently open browsers, pages, PDF documents, and '
+            + 'desktop sessions with their IDs. Useful for debugging or '
+            + 'recovering a stuck session.',
         inputSchema: {
             type: 'object',
             properties: {},
@@ -292,4 +436,4 @@ const META_TOOLS: McpToolDef[] = [
     },
 ]
 
-export const ALL_TOOLS: McpToolDef[] = [...WEB_TOOLS, ...PDF_TOOLS, ...META_TOOLS]
+export const ALL_TOOLS: McpToolDef[] = [...WEB_TOOLS, ...PDF_TOOLS, ...DESKTOP_TOOLS, ...META_TOOLS]

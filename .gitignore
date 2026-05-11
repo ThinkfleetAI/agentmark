@@ -17,3 +17,20 @@ dist/
 
 # Tesseract.js downloads language data into cwd by default
 *.traineddata
+
+# .NET / MSBuild output (used by apps/agent-runner/bridges/windows)
+bin/
+obj/
+*.suo
+*.user
+*.userprefs
+
+# JetBrains
+.idea/
+*.iml
+
+# Visual Studio
+.vs/
+
+# Local dev junk
+*.swp
