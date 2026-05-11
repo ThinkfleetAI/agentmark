@@ -14,6 +14,7 @@ import {
     createBrowser,
     convertDesktop,
     FixtureBackend,
+    WindowsUiaBackend,
     openPdfDocument,
     isAgentMarkError,
     parseSnapshot,
@@ -337,22 +338,41 @@ async function pdfReset(state: DispatcherState, args: Record<string, unknown>): 
 
 async function openDesktop(state: DispatcherState, args: Record<string, unknown>): Promise<DispatchResult> {
     const requested = typeof args.backend === 'string' ? args.backend : 'fixture'
+    const bridgePath = typeof args.bridge_path === 'string' ? args.bridge_path : undefined
+
     let backend: DesktopCaptureBackend
-    switch (requested) {
-        case 'fixture':
-            backend = new FixtureBackend()
-            break
-        case 'windows_uia':
-        case 'macos_axapi':
-            return {
-                text:
-                    `Backend "${requested}" is not yet bundled with this build of agentmark. `
-                    + 'Run agentmark_desktop_open with backend="fixture" to use the in-memory '
-                    + 'preset trees. Real OS bridges land in subsequent releases.',
-                isError: true,
-            }
-        default:
-            return { text: `Unknown desktop backend: ${requested}`, isError: true }
+    try {
+        switch (requested) {
+            case 'fixture':
+                backend = new FixtureBackend()
+                break
+            case 'windows_uia':
+                if (process.platform !== 'win32') {
+                    return {
+                        text:
+                            `Backend "windows_uia" requires Windows (process.platform=='win32'). `
+                            + `Current platform: ${process.platform}. Use backend="fixture" for `
+                            + `in-memory testing, or run agentmark on a Windows host.`,
+                        isError: true,
+                    }
+                }
+                backend = new WindowsUiaBackend({ bridgePath })
+                break
+            case 'macos_axapi':
+                return {
+                    text:
+                        `Backend "macos_axapi" is not yet bundled with this build of agentmark. `
+                        + 'Use backend="fixture" for in-memory testing while the macOS bridge ships.',
+                    isError: true,
+                }
+            default:
+                return { text: `Unknown desktop backend: ${requested}`, isError: true }
+        }
+    } catch (err) {
+        return {
+            text: `Failed to initialise backend "${requested}": ${(err as Error).message}`,
+            isError: true,
+        }
     }
 
     const id = generateSessionId('dt')

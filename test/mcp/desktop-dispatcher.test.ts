@@ -56,8 +56,19 @@ describe('MCP — desktop tools', () => {
         expect(result.text).toContain('Unknown desktop backend')
     })
 
-    it('agentmark_desktop_open with windows_uia returns "not yet bundled" (until the bridge ships)', async () => {
+    it('agentmark_desktop_open with windows_uia refuses to start on non-Windows platforms', async () => {
+        // On non-Windows: clear OS-mismatch error.
+        // On Windows: the dispatcher would attempt to spawn the bridge; that
+        // path is exercised in test/desktop/windows-uia-backend.test.ts.
+        if (process.platform === 'win32') return
+
         const result = await dispatch(state, 'agentmark_desktop_open', { backend: 'windows_uia' })
+        expect(result.isError).toBe(true)
+        expect(result.text).toMatch(/requires Windows/i)
+    })
+
+    it('agentmark_desktop_open with macos_axapi still reports not-yet-bundled (bridge ships later)', async () => {
+        const result = await dispatch(state, 'agentmark_desktop_open', { backend: 'macos_axapi' })
         expect(result.isError).toBe(true)
         expect(result.text).toContain('not yet bundled')
     })
