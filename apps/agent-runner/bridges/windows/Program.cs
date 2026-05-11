@@ -24,6 +24,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AgentMark.Bridge.Windows.Uia;
 
 namespace AgentMark.Bridge.Windows;
 
@@ -51,7 +52,7 @@ internal static class Program
         // EOF, leaving the process hung even after the parent closes the
         // pipe. ReadLine() handles EOF correctly. UIA calls are themselves
         // blocking COM-STA invocations so async doesn't buy us anything.
-        var dispatcher = new RpcDispatcher();
+        using var dispatcher = new RpcDispatcher();
 
         string? line;
         while ((line = Console.In.ReadLine()) != null)
@@ -180,9 +181,20 @@ internal sealed class RpcException(RpcError error, string message) : Exception(m
 // Dispatcher
 // ──────────────────────────────────────────────────────────────────────
 
-internal sealed class RpcDispatcher
+internal sealed class RpcDispatcher : IDisposable
 {
     private static readonly string BridgeVersion = "0.4.0";
+
+    // UIA work is lazy-initialised — ping/capabilities don't need it and
+    // booting UIA on startup adds ~150ms we don't want for clients that
+    // only smoke-test the bridge.
+    private readonly Lazy<StaWorker> _staWorker = new(() => new StaWorker());
+    private readonly Lazy<UiaCapturer> _capturer;
+
+    public RpcDispatcher()
+    {
+        _capturer = new Lazy<UiaCapturer>(() => _staWorker.Value.Invoke(() => new UiaCapturer()));
+    }
 
     public object? Dispatch(string method, JsonElement @params)
     {
@@ -190,10 +202,24 @@ internal sealed class RpcDispatcher
         {
             "ping"         => HandlePing(),
             "capabilities" => HandleCapabilities(),
+            "list_windows" => HandleListWindows(),
+            "capture"      => HandleCapture(@params),
             _ => throw new RpcException(
                 RpcError.MethodNotFound,
-                $"Unknown method: {method}. Supported: ping, capabilities."),
+                $"Unknown method: {method}. Supported: ping, capabilities, list_windows, capture."),
         };
+    }
+
+    public void Dispose()
+    {
+        if (_capturer.IsValueCreated)
+        {
+            try { _staWorker.Value.Invoke(() => _capturer.Value.Dispose()); } catch { /* swallow */ }
+        }
+        if (_staWorker.IsValueCreated)
+        {
+            try { _staWorker.Value.Dispose(); } catch { /* swallow */ }
+        }
     }
 
     private static object HandlePing() => new
@@ -212,9 +238,71 @@ internal sealed class RpcDispatcher
         {
             "ping",
             "capabilities",
-            // "capture" and "execute" land in Phase 0e2/0e3
+            "list_windows",
+            "capture",
+            // "execute" lands in Phase 0e3
         },
         uiaProvider = "FlaUI.UIA3",
         platform = "windows",
     };
+
+    private object HandleListWindows()
+    {
+        var capturer = _capturer.Value;
+        var sta = _staWorker.Value;
+        var windows = sta.Invoke(() => capturer.ListWindows());
+        return new { windows };
+    }
+
+    private object HandleCapture(JsonElement @params)
+    {
+        var req = new UiaCapturer.CaptureRequest
+        {
+            ProcessName = ReadString(@params, "processName"),
+            ProcessId = ReadInt(@params, "processId"),
+            WindowTitle = ReadString(@params, "windowTitle"),
+            WindowId = ReadString(@params, "windowId"),
+            MaxDepth = ReadInt(@params, "maxDepth") ?? 12,
+            IncludeHidden = ReadBool(@params, "includeHidden") ?? false,
+            TimeoutMs = ReadInt(@params, "timeoutMs") ?? 5000,
+            MaxElements = ReadInt(@params, "maxElements") ?? 2000,
+        };
+
+        try
+        {
+            var capturer = _capturer.Value;
+            var sta = _staWorker.Value;
+            return sta.Invoke(() => capturer.Capture(req));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RpcException(RpcError.WindowNotFound, ex.Message);
+        }
+    }
+
+    private static string? ReadString(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object) return null;
+        if (!parent.TryGetProperty(name, out var v)) return null;
+        return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    }
+
+    private static int? ReadInt(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object) return null;
+        if (!parent.TryGetProperty(name, out var v)) return null;
+        return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
+    }
+
+    private static bool? ReadBool(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object) return null;
+        if (!parent.TryGetProperty(name, out var v)) return null;
+        return v.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null,
+        };
+    }
 }
