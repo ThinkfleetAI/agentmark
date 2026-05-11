@@ -211,3 +211,22 @@ export type {
     ExtractFramesOptions,
     ExtractedFrame,
 } from './video'
+
+// ── v0.4 spec / v0.12 lib: Desktop support (kind: 'desktop') ─────────────
+
+export { convertDesktop, FixtureBackend, buildDesktopBody } from './desktop'
+export type {
+    ConvertDesktopOptions,
+    FixtureBackendOptions,
+    BuildDesktopBodyResult,
+    DesktopCaptureBackend,
+    CaptureDesktopOptions,
+    DesktopCapture,
+    DesktopElement,
+    DesktopRole,
+    DesktopTarget,
+    ExecuteDesktopOptions,
+    ExecuteDesktopAction,
+    ExecuteDesktopResult,
+    KeyModifier,
+} from './desktop'
