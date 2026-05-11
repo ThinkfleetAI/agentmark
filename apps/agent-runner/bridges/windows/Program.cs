@@ -57,7 +57,12 @@ internal static class Program
         string? line;
         while ((line = Console.In.ReadLine()) != null)
         {
-            line = line.Trim();
+            // Strip UTF-8 BOM if a client wrote one at the start of the
+            // stream. Windows clients (PowerShell especially) do this
+            // unpredictably on the first WriteLine, depending on stream
+            // buffering. Without this strip the first JSON request gets
+            // a leading U+FEFF and JsonDocument.Parse rejects it.
+            line = line.Trim().TrimStart('\uFEFF');
             if (line.Length == 0) continue;
 
             JsonElement reqId = default;
@@ -204,9 +209,10 @@ internal sealed class RpcDispatcher : IDisposable
             "capabilities" => HandleCapabilities(),
             "list_windows" => HandleListWindows(),
             "capture"      => HandleCapture(@params),
+            "execute"      => HandleExecute(@params),
             _ => throw new RpcException(
                 RpcError.MethodNotFound,
-                $"Unknown method: {method}. Supported: ping, capabilities, list_windows, capture."),
+                $"Unknown method: {method}. Supported: ping, capabilities, list_windows, capture, execute."),
         };
     }
 
@@ -240,7 +246,7 @@ internal sealed class RpcDispatcher : IDisposable
             "capabilities",
             "list_windows",
             "capture",
-            // "execute" lands in Phase 0e3
+            "execute",
         },
         uiaProvider = "FlaUI.UIA3",
         platform = "windows",
@@ -278,6 +284,56 @@ internal sealed class RpcDispatcher : IDisposable
         {
             throw new RpcException(RpcError.WindowNotFound, ex.Message);
         }
+    }
+
+    private object HandleExecute(JsonElement @params)
+    {
+        var modifiers = ReadStringArray(@params, "modifiers");
+
+        var req = new UiaCapturer.ExecuteRequest
+        {
+            ElementId = ReadString(@params, "elementId")
+                ?? throw new RpcException(RpcError.InvalidParams, "execute requires `elementId`."),
+            ActionType = ReadString(@params, "actionType") ?? "click",
+            Text = ReadString(@params, "text"),
+            Value = ReadString(@params, "value"),
+            Checked = ReadBool(@params, "checked"),
+            Expanded = ReadBool(@params, "expanded"),
+            Key = ReadString(@params, "key"),
+            Modifiers = modifiers,
+            ClearFirst = ReadBool(@params, "clearFirst") ?? false,
+            TimeoutMs = ReadInt(@params, "timeoutMs") ?? 5000,
+        };
+
+        try
+        {
+            var capturer = _capturer.Value;
+            var sta = _staWorker.Value;
+            var result = sta.Invoke(() => capturer.Execute(req));
+            return new
+            {
+                ok = result.Ok,
+                message = result.Message,
+                newValue = result.NewValue,
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RpcException(RpcError.InternalError, ex.Message);
+        }
+    }
+
+    private static string[]? ReadStringArray(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object) return null;
+        if (!parent.TryGetProperty(name, out var v)) return null;
+        if (v.ValueKind != JsonValueKind.Array) return null;
+        var list = new List<string>(v.GetArrayLength());
+        foreach (var item in v.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String) list.Add(item.GetString()!);
+        }
+        return list.ToArray();
     }
 
     private static string? ReadString(JsonElement parent, string name)
