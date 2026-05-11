@@ -27,10 +27,12 @@ final class Dispatcher {
                 return try handleListWindows()
             case "capture":
                 return try handleCapture(params: request.params)
+            case "execute":
+                return try handleExecute(params: request.params)
             default:
                 throw RpcError(
                     code: .methodNotFound,
-                    message: "Unknown method: \(request.method). Supported: ping, capabilities, list_windows, capture.",
+                    message: "Unknown method: \(request.method). Supported: ping, capabilities, list_windows, capture, execute.",
                     requestId: request.id
                 )
             }
@@ -53,7 +55,7 @@ final class Dispatcher {
         return [
             "bridge": "agentmark-bridge-macos",
             "version": bridgeVersion,
-            "methods": ["ping", "capabilities", "list_windows", "capture"],
+            "methods": ["ping", "capabilities", "list_windows", "capture", "execute"],
             "axapiProvider": "Accessibility (AXAPI)",
             "platform": "macos",
             "accessibilityGranted": AccessibilityPermission.isGranted,
@@ -78,5 +80,26 @@ final class Dispatcher {
             if let i = p.int("maxElements") { req.maxElements = i }
         }
         return try capturer.capture(req)
+    }
+
+    private func handleExecute(params: JsonValue?) throws -> Any {
+        guard let p = params,
+              let elementId = p.string("elementId"), !elementId.isEmpty else {
+            throw RpcError(code: .invalidParams, message: "execute requires `elementId`.")
+        }
+        var req = AxapiCapturer.ExecuteRequest()
+        req.elementId = elementId
+        req.actionType = p.string("actionType") ?? "click"
+        req.text = p.string("text")
+        req.value = p.string("value")
+        req.checked = p.bool("checked")
+        req.expanded = p.bool("expanded")
+        req.key = p.string("key")
+        if let modsAny = p.dict?["modifiers"], case .array(let arr) = JsonValue.fromAny(modsAny) {
+            req.modifiers = arr.compactMap { $0 as? String }
+        }
+        req.clearFirst = p.bool("clearFirst") ?? false
+        if let i = p.int("timeoutMs") { req.timeoutMs = i }
+        return try capturer.execute(req)
     }
 }

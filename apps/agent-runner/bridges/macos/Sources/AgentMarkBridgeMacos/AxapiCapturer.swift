@@ -377,6 +377,283 @@ final class AxapiCapturer {
         return nil
     }
 
+    // MARK: - Execute
+
+    struct ExecuteRequest {
+        var elementId: String = ""
+        var actionType: String = "click"
+        var text: String?
+        var value: String?
+        var checked: Bool?
+        var expanded: Bool?
+        var key: String?
+        var modifiers: [String]?
+        var clearFirst: Bool = false
+        var timeoutMs: Int = 5000
+    }
+
+    func execute(_ req: ExecuteRequest) throws -> [String: Any] {
+        try requirePermission()
+
+        guard let session = lastSession else {
+            return [
+                "ok": false,
+                "message": "No capture session active. Call `capture` before `execute` so the bridge can resolve element_ids.",
+            ]
+        }
+        guard let element = session.elements[req.elementId] else {
+            return [
+                "ok": false,
+                "message": "Unknown element_id `\(req.elementId)` in the current capture session. Re-capture if the window has changed.",
+            ]
+        }
+
+        do {
+            switch req.actionType {
+            case "click":     return try doClick(element)
+            case "type":      return try doType(element, text: req.text ?? "", clearFirst: req.clearFirst)
+            case "select":    return try doSelect(element, value: req.value ?? "")
+            case "check":     return try doCheck(element, want: req.checked ?? true)
+            case "expand":    return try doExpand(element, want: req.expanded ?? true)
+            case "focus":     return try doFocus(element)
+            case "scroll_to": return try doScrollTo(element)
+            case "key":       return try doKey(element, key: req.key ?? "", modifiers: req.modifiers ?? [])
+            default:
+                return ["ok": false, "message": "Unknown action type `\(req.actionType)`."]
+            }
+        } catch let rpcError as RpcError {
+            return ["ok": false, "message": rpcError.message]
+        } catch {
+            return ["ok": false, "message": "\(error)"]
+        }
+    }
+
+    // ---- Per-action helpers ----
+
+    private func doClick(_ el: AXUIElement) throws -> [String: Any] {
+        // Try AXPress first (buttons, menu items, links).
+        if performAction(el, "AXPress") {
+            return ["ok": true]
+        }
+        // Toggle action (some checkboxes).
+        if performAction(el, "AXToggle") {
+            return ["ok": true]
+        }
+        // Pick (some popups / list items).
+        if performAction(el, "AXPick") {
+            return ["ok": true]
+        }
+        // Confirm (default button in a dialog).
+        if performAction(el, "AXConfirm") {
+            return ["ok": true]
+        }
+        // Show menu (for popup-button-style controls).
+        if performAction(el, "AXShowMenu") {
+            return ["ok": true, "message": "Used AXShowMenu fallback (element exposed no AXPress)."]
+        }
+        return ["ok": false, "message": "Element does not support any clickable AX action."]
+    }
+
+    private func doType(_ el: AXUIElement, text: String, clearFirst: Bool) throws -> [String: Any] {
+        // AXAPI's standard text input is kAXValueAttribute as a String.
+        // Setting it via AXUIElementSetAttributeValue replaces content
+        // atomically; honour `clearFirst` by setting "" first when
+        // requested.
+        _ = setFocus(el)  // best-effort; some apps require focus before SetValue is honoured
+
+        if clearFirst {
+            _ = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, "" as CFTypeRef)
+        }
+        let err = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, text as CFTypeRef)
+        if err == .success {
+            let newValue = AxElement(el).value() ?? text
+            return ["ok": true, "newValue": newValue]
+        }
+
+        // Fallback: synthesise keystrokes via CGEvent. Only usable when
+        // the element accepts focus and the host app honours regular
+        // keyboard input on the focused element.
+        if !setFocus(el) {
+            return ["ok": false, "message": "SetAttributeValue failed (\(err)) and element refused focus."]
+        }
+        if clearFirst {
+            sendKeyCombo(keyCode: 0x00 /* a */, modifiers: [.maskCommand])
+            sendKey(keyCode: 0x33 /* delete */)
+        }
+        typeString(text)
+        return ["ok": true, "message": "Used keyboard fallback (AXValue not writable)."]
+    }
+
+    private func doSelect(_ el: AXUIElement, value: String) throws -> [String: Any] {
+        // For selection-item elements (rows, menu items, tabs), perform AXPress.
+        if performAction(el, "AXPress") { return ["ok": true, "newValue": AxElement(el).string(kAXTitleAttribute as String) ?? value] }
+        // For popup buttons, set kAXValue directly.
+        let err = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, value as CFTypeRef)
+        if err == .success { return ["ok": true, "newValue": value] }
+        return ["ok": false, "message": "Element does not support a selection action."]
+    }
+
+    private func doCheck(_ el: AXUIElement, want: Bool) throws -> [String: Any] {
+        // Toggle until state matches (cap at 3 to avoid loops on
+        // tri-state controls).
+        var guardCount = 3
+        while guardCount > 0 {
+            guardCount -= 1
+            let current = AxElement(el).bool(kAXValueAttribute as String) ?? false
+            if current == want { break }
+            // Try AXPress first, then AXToggle.
+            if !performAction(el, "AXPress") && !performAction(el, "AXToggle") {
+                return ["ok": false, "message": "Element does not support AXPress/AXToggle."]
+            }
+        }
+        let final = AxElement(el).bool(kAXValueAttribute as String) ?? false
+        return ["ok": final == want, "newValue": final ? "true" : "false"]
+    }
+
+    private func doExpand(_ el: AXUIElement, want: Bool) throws -> [String: Any] {
+        // Expanded state lives in kAXExpandedAttribute or kAXDisclosing.
+        let current = AxElement(el).bool(kAXExpandedAttribute as String) ?? AxElement(el).bool("AXDisclosing") ?? false
+        if current == want {
+            return ["ok": true, "newValue": want ? "Expanded" : "Collapsed"]
+        }
+        // Try setting the attribute directly (works for outline rows).
+        let setErr = AXUIElementSetAttributeValue(el, kAXExpandedAttribute as CFString, want as CFTypeRef)
+        if setErr == .success {
+            return ["ok": true, "newValue": want ? "Expanded" : "Collapsed"]
+        }
+        // Fall back to AXShowMenu / AXPress to toggle.
+        if performAction(el, "AXShowMenu") || performAction(el, "AXPress") {
+            return ["ok": true, "newValue": want ? "Expanded" : "Collapsed", "message": "Used AXPress fallback."]
+        }
+        return ["ok": false, "message": "Element does not support expand/collapse."]
+    }
+
+    private func doFocus(_ el: AXUIElement) throws -> [String: Any] {
+        if setFocus(el) { return ["ok": true] }
+        return ["ok": false, "message": "Element refused focus."]
+    }
+
+    private func doScrollTo(_ el: AXUIElement) throws -> [String: Any] {
+        if performAction(el, "AXScrollToVisible") {
+            return ["ok": true]
+        }
+        // SetFocus often implies scroll-into-view for most controls.
+        if setFocus(el) {
+            return ["ok": true, "message": "Used focus fallback (no AXScrollToVisible)."]
+        }
+        return ["ok": false, "message": "Element does not support AXScrollToVisible and refused focus."]
+    }
+
+    private func doKey(_ el: AXUIElement, key: String, modifiers: [String]) throws -> [String: Any] {
+        if key.isEmpty {
+            return ["ok": false, "message": "Missing `key` argument."]
+        }
+        _ = setFocus(el)
+        guard let code = virtualKeyCode(forName: key) else {
+            // Not a named key — type the literal text.
+            typeString(key)
+            return ["ok": true, "message": "Typed literal text `\(key)`."]
+        }
+        let mods = modifiers.compactMap(modifierFlag(forName:))
+        sendKeyCombo(keyCode: code, modifiers: mods)
+        return ["ok": true]
+    }
+
+    // MARK: - AXAPI action helpers
+
+    /// AXUIElementPerformAction returns success on no-op as well as on
+    /// real activation, so we don't try to interpret partial-failure.
+    /// Caller chains alternatives if `false` returned.
+    private func performAction(_ el: AXUIElement, _ action: String) -> Bool {
+        return AXUIElementPerformAction(el, action as CFString) == .success
+    }
+
+    /// Best-effort focus. Some elements ignore kAXFocusedAttribute
+    /// (Document role, AXStaticText); not strictly necessary for the
+    /// caller to act on the result.
+    private func setFocus(_ el: AXUIElement) -> Bool {
+        let err = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        return err == .success
+    }
+
+    // MARK: - Keyboard simulation (CGEvent)
+
+    private func typeString(_ s: String) {
+        // CGEvent supports unicode payload directly via
+        // CGEventKeyboardSetUnicodeString — works for most Latin
+        // and accented characters without per-character key-code
+        // lookup.
+        for ch in s {
+            guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else { continue }
+            let unicodeChars = Array(String(ch).utf16)
+            down.keyboardSetUnicodeString(stringLength: unicodeChars.count, unicodeString: unicodeChars)
+            up.keyboardSetUnicodeString(stringLength: unicodeChars.count, unicodeString: unicodeChars)
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    private func sendKey(keyCode: CGKeyCode) {
+        sendKeyCombo(keyCode: keyCode, modifiers: [])
+    }
+
+    private func sendKeyCombo(keyCode: CGKeyCode, modifiers: [CGEventFlags]) {
+        let combined: CGEventFlags = modifiers.reduce(CGEventFlags(rawValue: 0)) { CGEventFlags(rawValue: $0.rawValue | $1.rawValue) }
+        if let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
+            down.flags = combined
+            down.post(tap: .cghidEventTap)
+        }
+        if let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
+            up.flags = combined
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Mapping of friendly key names to macOS virtual key codes.
+    /// Values from Carbon's `Events.h` (`kVK_*`) — Apple still ships
+    /// these as the canonical key-code constants on Apple Silicon.
+    private func virtualKeyCode(forName name: String) -> CGKeyCode? {
+        switch name.lowercased() {
+        case "return", "enter":  return 0x24
+        case "tab":              return 0x30
+        case "space", "spacebar": return 0x31
+        case "delete", "backspace": return 0x33
+        case "escape", "esc":    return 0x35
+        case "left":  return 0x7B
+        case "right": return 0x7C
+        case "down":  return 0x7D
+        case "up":    return 0x7E
+        case "home":  return 0x73
+        case "end":   return 0x77
+        case "pageup", "pgup":   return 0x74
+        case "pagedown", "pgdn": return 0x79
+        case "f1": return 0x7A
+        case "f2": return 0x78
+        case "f3": return 0x63
+        case "f4": return 0x76
+        case "f5": return 0x60
+        case "f6": return 0x61
+        case "f7": return 0x62
+        case "f8": return 0x64
+        case "f9": return 0x65
+        case "f10": return 0x6D
+        case "f11": return 0x67
+        case "f12": return 0x6F
+        default: return nil
+        }
+    }
+
+    private func modifierFlag(forName name: String) -> CGEventFlags? {
+        switch name.lowercased() {
+        case "ctrl", "control": return .maskControl
+        case "alt", "option":   return .maskAlternate
+        case "shift":           return .maskShift
+        case "meta", "cmd", "command", "win", "windows": return .maskCommand
+        default: return nil
+        }
+    }
+
     // MARK: - Window ID encoding
 
     func encodeWindowId(pid: pid_t, index: Int) -> String {
