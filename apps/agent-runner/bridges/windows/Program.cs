@@ -57,7 +57,12 @@ internal static class Program
         string? line;
         while ((line = Console.In.ReadLine()) != null)
         {
-            line = line.Trim();
+            // Strip UTF-8 BOM if a client wrote one at the start of the
+            // stream. Windows clients (PowerShell especially) do this
+            // unpredictably on the first WriteLine, depending on stream
+            // buffering. Without this strip the first JSON request gets
+            // a leading U+FEFF and JsonDocument.Parse rejects it.
+            line = line.Trim().TrimStart('\uFEFF');
             if (line.Length == 0) continue;
 
             JsonElement reqId = default;

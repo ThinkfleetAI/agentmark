@@ -19,10 +19,16 @@ if (-not (Test-Path $exe)) {
     exit 1
 }
 
-# ── Step 1: ensure a Notepad window exists, foreground it ──────────────
-Write-Host "Launching Notepad..."
-Start-Process notepad
-Start-Sleep -Milliseconds 800
+# ── Step 1: Notepad must already be open ────────────────────────────────
+# Win 11 UWP apps have a startup delay and weird session quirks that
+# make "launch + immediately query" unreliable. Easier and more honest
+# to require Notepad to already be visible to the user.
+$notepadProc = Get-Process notepad -ErrorAction SilentlyContinue
+if (-not $notepadProc) {
+    Write-Host "Please open Notepad first (Win+R, type 'notepad', Enter), then re-run this script." -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "Found notepad process(es): $((Get-Process notepad).Id -join ', ')"
 
 # Spawn bridge
 $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -33,23 +39,45 @@ $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $proc = [System.Diagnostics.Process]::Start($psi)
 
-function Send-Request($p, $payload) {
+function Send-RequestRaw($p, $payload) {
     $p.StandardInput.WriteLine($payload)
     $p.StandardInput.Flush()
-    return ($p.StandardOutput.ReadLine() | ConvertFrom-Json)
+    return $p.StandardOutput.ReadLine()
+}
+
+function Send-Request($p, $payload) {
+    return (Send-RequestRaw $p $payload | ConvertFrom-Json)
 }
 
 # ── Step 2: locate the Notepad window ──────────────────────────────────
 Write-Host ""
 Write-Host "Step 2 -- list_windows..."
-$listResp = Send-Request $proc '{"jsonrpc":"2.0","id":1,"method":"list_windows"}'
-$notepad = $listResp.result.windows | Where-Object { $_.processName -eq 'notepad' } | Select-Object -First 1
+$rawList = Send-RequestRaw $proc '{"jsonrpc":"2.0","id":1,"method":"list_windows"}'
+Write-Host "Raw list_windows response (first 800 chars):" -ForegroundColor DarkGray
+Write-Host ($rawList.Substring(0, [Math]::Min(800, $rawList.Length))) -ForegroundColor DarkGray
+$listResp = $rawList | ConvertFrom-Json
+
+# Match Notepad permissively. Win 11's UWP Notepad shows process name
+# "Notepad" (capitalized) and the window class differs from classic
+# notepad.exe. Match by window title containing 'Notepad' OR by
+# processName matching notepad / notepad.exe case-insensitively.
+$notepad = $listResp.result.windows | Where-Object {
+    ($_.processName -and $_.processName -imatch '^notepad') -or
+    ($_.windowTitle -and $_.windowTitle -imatch 'notepad')
+} | Select-Object -First 1
+
 if (-not $notepad) {
-    Write-Error "No notepad window visible to UIA. Open Notepad in the VM console first."
+    Write-Host ""
+    Write-Host "All visible windows the bridge can see:" -ForegroundColor Yellow
+    $listResp.result.windows | ForEach-Object {
+        Write-Host ("  [{0}] {1} -- class={2} id={3}" -f $_.processName, $_.windowTitle, $_.windowClass, $_.windowId)
+    }
+    Write-Host ""
+    Write-Error "Notepad not in the visible window list. Make sure Notepad is open and visible (not minimised)."
     $proc.StandardInput.Close(); $proc.WaitForExit(5000) | Out-Null
     exit 1
 }
-Write-Host "  found: $($notepad.windowTitle) ($($notepad.windowId))"
+Write-Host "  found: $($notepad.windowTitle) (process=$($notepad.processName), $($notepad.windowId))"
 
 # ── Step 3: capture Notepad ────────────────────────────────────────────
 Write-Host ""
