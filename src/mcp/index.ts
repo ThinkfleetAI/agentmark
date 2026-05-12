@@ -75,6 +75,18 @@ export type {
     ScreenshotResult,
 } from '../plugins/vision'
 
+// Process Pack — OS-process introspection (list + per-PID detail). Opt-in.
+export {
+    createProcessPlugin,
+    listProcesses,
+    getProcessDetail,
+    PROCESS_TOOLS,
+} from '../plugins/process'
+export type {
+    ProcessSummary,
+    ProcessDetail,
+} from '../plugins/process'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
