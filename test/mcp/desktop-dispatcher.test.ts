@@ -279,6 +279,54 @@ describe('MCP — desktop tools', () => {
         expect(batch.text).toContain('No cached snapshot')
     })
 
+    it('agentmark_desktop_diff returns no_changes when nothing happened between snapshots', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const diff = await dispatch(state, 'agentmark_desktop_diff', { desktop_id })
+        expect(diff.isError).toBeFalsy()
+        const body = JSON.parse(diff.text)
+        expect(body.no_changes).toBe(true)
+    })
+
+    it('agentmark_desktop_diff surfaces the value change after an execute', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        await dispatch(state, 'agentmark_desktop_execute', {
+            desktop_id,
+            action_id: 'act_in_company',
+            value: 'Globex Corp',
+        })
+
+        const diff = await dispatch(state, 'agentmark_desktop_diff', { desktop_id })
+        expect(diff.isError).toBeFalsy()
+        const body = JSON.parse(diff.text)
+        expect(body.no_changes).toBe(false)
+        expect(body.summary.changed).toBeGreaterThanOrEqual(1)
+        const companyChange = body.elements_changed.find((c: { id: string }) => c.id === 'in_company')
+        expect(companyChange?.changes?.value?.to).toBe('Globex Corp')
+    })
+
+    it('agentmark_desktop_diff errors when no snapshot has been captured yet', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        const diff = await dispatch(state, 'agentmark_desktop_diff', { desktop_id })
+        expect(diff.isError).toBe(true)
+        expect(diff.text).toContain('No cached capture')
+    })
+
     it('agentmark_desktop_close removes the session', async () => {
         const open = await dispatch(state, 'agentmark_desktop_open', {})
         const { desktop_id } = JSON.parse(open.text)

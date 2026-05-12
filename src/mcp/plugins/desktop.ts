@@ -6,6 +6,7 @@
  */
 import {
     convertDesktop,
+    diffDesktopCaptures,
     FixtureBackend,
     MacosAxapiBackend,
     WindowsUiaBackend,
@@ -144,6 +145,45 @@ const DESKTOP_TOOLS: McpToolDef[] = [
                 },
             },
             required: ['desktop_id', 'action_id'],
+        },
+    },
+    {
+        name: 'agentmark_desktop_diff',
+        description:
+            'Take a fresh capture of the target window and return only what '
+            + 'CHANGED since the last snapshot or diff on this session. '
+            + 'Much smaller payload than a full re-snapshot — useful for '
+            + 'verifying "did my action take effect?" or detecting a new '
+            + 'dialog without paying for the whole tree.\n'
+            + '\nReturns: { no_changes, summary {added/removed/changed}, '
+            + 'window_title_changed, focus_changed, elements_added[], '
+            + 'elements_removed[], elements_changed[] }. Each `elements_changed` '
+            + 'entry lists the specific fields that moved (value, enabled, '
+            + 'aria.checked, bounds, etc.) with from/to pairs.\n'
+            + '\nAfter the diff completes, the session\'s cached capture is '
+            + 'updated so the NEXT diff is against this new state. The '
+            + 'action-id binding from the most recent full snapshot is NOT '
+            + 'changed — call agentmark_desktop_snapshot when you need '
+            + 'fresh action_ids after a structural change.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                target: {
+                    type: 'object',
+                    description: 'Optional target override (same shape as snapshot).',
+                    properties: {
+                        process_name: { type: 'string' },
+                        process_id: { type: 'number' },
+                        window_title: { type: 'string' },
+                        window_id: { type: 'string' },
+                    },
+                },
+                max_depth: { type: 'number' },
+                include_hidden: { type: 'boolean' },
+                timeout_ms: { type: 'number' },
+            },
+            required: ['desktop_id'],
         },
     },
     {
@@ -289,7 +329,7 @@ export function createDesktopPlugin(): DesktopPlugin {
             const includeHidden = args.include_hidden === true
             const timeoutMs = typeof args.timeout_ms === 'number' ? args.timeout_ms : undefined
 
-            const { agentmark, binding } = await convertDesktop({
+            const { agentmark, binding, capture } = await convertDesktop({
                 backend: session.backend,
                 target,
                 maxDepth,
@@ -299,12 +339,51 @@ export function createDesktopPlugin(): DesktopPlugin {
 
             session.lastTarget = target
             session.lastBinding = binding
+            // Cache the raw capture so agentmark_desktop_diff can compare
+            // a future snapshot against the most recent one without forcing
+            // the agent to re-fetch the previous baseline.
+            session.lastCapture = capture
             const snap = parseSnapshot(agentmark)
             session.lastActionTypes = new Map(
                 Object.entries(snap.actions ?? {}).map(([k, def]) => [k, def.type]),
             )
 
             return { text: agentmark }
+        },
+
+        agentmark_desktop_diff: async (args): Promise<DispatchResult> => {
+            const id = requireString(args, 'desktop_id')
+            const session = requireDesktop(id)
+
+            if (!session.lastCapture) {
+                return {
+                    text:
+                        `No cached capture for desktop_id ${id}. Call `
+                        + `agentmark_desktop_snapshot first so the diff has a baseline.`,
+                    isError: true,
+                }
+            }
+
+            const target = parseTarget(args.target) ?? session.lastTarget
+            const maxDepth = typeof args.max_depth === 'number' ? args.max_depth : undefined
+            const includeHidden = args.include_hidden === true
+            const timeoutMs = typeof args.timeout_ms === 'number' ? args.timeout_ms : 5000
+
+            const fresh = await session.backend.capture({
+                target,
+                maxDepth,
+                includeHidden,
+                timeoutMs,
+            })
+
+            const diff = diffDesktopCaptures(session.lastCapture, fresh)
+
+            // Move the baseline forward so the NEXT diff is against this
+            // capture rather than the original snapshot.
+            session.lastCapture = fresh
+            session.lastTarget = target
+
+            return { text: JSON.stringify(diff, null, 2) }
         },
 
         agentmark_desktop_execute: async (args): Promise<DispatchResult> => {
