@@ -102,11 +102,13 @@ export type {
 } from '../plugins/system'
 
 // Recipes Pack — durable named playbooks the agent learns once + replays.
-// Local-file backend only for now; Activepieces recipes endpoints don't
-// exist yet so we don't ship a speculative HTTP backend.
+// Two production-ready backends: LocalFile (default, single-user) and
+// Activepieces (multi-user, hits the live recipes API).
 export {
     createRecipesPlugin,
     LocalFileRecipeBackend,
+    ActivepiecesRecipeBackend,
+    ActivepiecesRecipeError,
     RecipeStore,
     RECIPES_TOOLS,
 } from '../plugins/recipes'
@@ -119,6 +121,7 @@ export type {
     RecipeBackend,
     RecipeBackendDescription,
     LocalFileRecipeBackendConfig,
+    ActivepiecesRecipeBackendConfig,
 } from '../plugins/recipes'
 
 // Memory Pack — hierarchical persistent memory for AI agents. Opt-in;
