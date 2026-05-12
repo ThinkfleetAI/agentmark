@@ -12,6 +12,7 @@ Each installer drops these files onto the target machine:
 |---|---|---|
 | macOS | `/opt/thinkfleet/agentmark/` | `node` (arm64 + x64 universal), `agentmark/` (npm package), `bridges/agentmark-bridge-macos` (Swift AXAPI binary), `bin/agentmark-mcp` launcher script |
 | Windows | `C:\Program Files\ThinkFleet\AgentMark\` | `node.exe`, `agentmark\` (npm package), `bridges\agentmark-bridge-windows.exe` (.NET UIA), `agentmark-mcp.cmd` launcher (added to PATH) |
+| Linux | self-contained `.AppImage` | `node` + `agentmark/` (npm package) + `agentmark-mcp` launcher inside the AppDir. **No desktop bridge** — AT-SPI Linux bridge is future work; every other plugin runs fine. |
 
 Both installers add an `agentmark-mcp` command to the user's PATH that
 runs the bundled Node against the bundled agentmark package.
@@ -45,9 +46,19 @@ WiX Toolset 4.
 # Produces: dist\installer\AgentMark-<version>-windows.msi
 ```
 
-### Linux (future)
+### Linux
 
-AppImage scaffolding lives in a follow-up PR.
+Requires: Linux host (or GitHub Actions ubuntu-latest), `libfuse2`
+installed (`apt install libfuse2` on Ubuntu 22+ for appimagetool).
+
+```sh
+./packaging/scripts/build-linux.sh
+# Produces: dist/installer/AgentMark-<version>-linux-x86_64.AppImage
+```
+
+Note: Linux ships without the desktop a11y bridge for now. An AT-SPI
+bridge would slot into the same AppDir layout (`usr/lib/agentmark/
+bridges/agentmark-bridge-linux`); the launcher already detects it.
 
 ## Code signing
 

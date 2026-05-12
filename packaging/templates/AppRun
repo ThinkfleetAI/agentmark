@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# AppImage entrypoint.
+#
+# Mounted at /tmp/.mount_xxx/ when the .AppImage runs. We hand off to
+# the bundled launcher which knows how to resolve Node + agentmark dist
+# relative to itself.
+
+set -e
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "$HERE/usr/bin/agentmark-mcp" "$@"
