@@ -12,19 +12,27 @@
  * can carry a `verify` block describing what the diff should look like
  * after the step lands, and the agent decides what "verified" means.
  */
-import { RecipeStore } from './store'
+import { LocalFileRecipeBackend } from './store'
 import { resolveRecipe, substitute, applyParameterSchema } from './substitute'
 import { RECIPES_TOOLS } from './tool-defs'
+import type { RecipeBackend } from './backend'
 import type { Recipe, RecipeStep, RecipeParameter } from './types'
 import type { AgentMarkPlugin, DispatchResult, ToolHandler } from '../../mcp/plugin'
 
 export interface RecipesPluginConfig {
-    /** Override the recipes-file path (defaults to ~/.thinkfleet/agentmark/recipes.json). */
+    /**
+     * Storage backend. Pass a `RemoteRecipeBackend` to point at an
+     * on-prem or cloud ThinkFleet recipe service. Defaults to a
+     * `LocalFileRecipeBackend` at ~/.thinkfleet/agentmark/recipes.json.
+     */
+    backend?: RecipeBackend
+    /** Local-file backend convenience: override the on-disk store path.
+     *  Ignored when `backend` is supplied. */
     storePath?: string
 }
 
 export function createRecipesPlugin(config: RecipesPluginConfig = {}): AgentMarkPlugin {
-    const store = new RecipeStore({ path: config.storePath })
+    const store: RecipeBackend = config.backend ?? new LocalFileRecipeBackend({ path: config.storePath })
 
     const handlers: Record<string, ToolHandler> = {
         agentmark_recipe_save: async (args): Promise<DispatchResult> => {
@@ -111,13 +119,17 @@ export function createRecipesPlugin(config: RecipesPluginConfig = {}): AgentMark
         },
     }
 
+    const isLocalFile = store instanceof LocalFileRecipeBackend
+
     return {
         name: 'recipes',
         version: '0.1.0',
         tools: RECIPES_TOOLS,
         handlers,
         describeSessions: () => ({
-            recipes: { store_path: store.filePath },
+            recipes: isLocalFile
+                ? { kind: 'local-file', store_path: (store as LocalFileRecipeBackend).filePath }
+                : { kind: 'custom', backend_class: store.constructor.name },
         }),
     }
 }
@@ -135,7 +147,9 @@ function recipeSummary(r: Recipe): Record<string, unknown> {
     }
 }
 
-export { RecipeStore } from './store'
+export { LocalFileRecipeBackend, RecipeStore } from './store'
+export type { LocalFileRecipeBackendConfig, RecipeStoreConfig } from './store'
+export type { RecipeBackend, RecipeBackendDescription } from './backend'
 export { resolveRecipe, substitute, applyParameterSchema } from './substitute'
 export { RECIPES_TOOLS } from './tool-defs'
 export type { Recipe, RecipeStep, RecipeParameter, RecipeVerification, ResolvedRecipe, ResolvedRecipeStep } from './types'

@@ -1,32 +1,37 @@
 /**
- * Recipe storage — single JSON file containing a `{ name → Recipe }` map.
+ * Local-file recipe backend.
+ *
+ * The default `RecipeBackend` implementation: single JSON file
+ * containing a `{ name → Recipe }` map. For team sharing or on-prem/
+ * cloud sync, use `RemoteRecipeBackend` instead.
  *
  * Default path: `~/.thinkfleet/agentmark/recipes.json` (mode 0600).
- * Separate from the Foundations StateStore so recipes don't bloat the
- * general K/V file and so they can be backed up / synced independently.
- *
- * Writes use the same temp-file + rename pattern as StateStore.
+ * Atomic temp-file + rename writes.
  */
 import { mkdir, readFile, writeFile, rename, chmod, unlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import type { RecipeBackend, RecipeBackendDescription } from './backend'
 import type { Recipe } from './types'
 
-export interface RecipeStoreConfig {
+export interface LocalFileRecipeBackendConfig {
     /** Override the on-disk path (mostly for tests). */
     path?: string
 }
+
+/** @deprecated Use LocalFileRecipeBackendConfig. */
+export type RecipeStoreConfig = LocalFileRecipeBackendConfig
 
 interface RecipeFile {
     version: 1
     recipes: Record<string, Recipe>
 }
 
-export class RecipeStore {
+export class LocalFileRecipeBackend implements RecipeBackend {
     readonly filePath: string
     private cached: RecipeFile | null = null
 
-    constructor(config: RecipeStoreConfig = {}) {
+    constructor(config: LocalFileRecipeBackendConfig = {}) {
         this.filePath = config.path
             ?? path.join(os.homedir(), '.thinkfleet', 'agentmark', 'recipes.json')
     }
@@ -100,6 +105,15 @@ export class RecipeStore {
         }
     }
 
+    async describe(): Promise<RecipeBackendDescription> {
+        const file = await this.load()
+        return {
+            kind: 'local-file',
+            store_path: this.filePath,
+            recipe_count: Object.keys(file.recipes).length,
+        }
+    }
+
     private async persist(file: RecipeFile): Promise<void> {
         this.cached = file
         await mkdir(path.dirname(this.filePath), { recursive: true })
@@ -111,3 +125,10 @@ export class RecipeStore {
         await rename(tmp, this.filePath)
     }
 }
+
+/**
+ * Backward-compat alias for the renamed class.
+ * @deprecated Use `LocalFileRecipeBackend` directly, or pass a
+ * `RecipeBackend` to `createRecipesPlugin({ backend })`.
+ */
+export const RecipeStore = LocalFileRecipeBackend

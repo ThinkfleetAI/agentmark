@@ -1,22 +1,22 @@
 /**
- * Hierarchical memory store backed by a single JSON file.
+ * Local-file memory backend.
  *
- * Default path: `~/.thinkfleet/agentmark/memory.json` (mode 0600).
- * Separate from Foundations StateStore + Recipes RecipeStore so each
- * has independent persistence + backup/sync.
+ * The default `MemoryBackend` implementation: a single JSON file on
+ * disk (mode 0600), atomic temp-file + rename writes, soft LRU cap
+ * via `maxRecords`. Suitable for single-machine setups; for team
+ * sharing or on-prem/cloud sync, use RemoteMemoryBackend instead.
  *
- * Writes are atomic via temp-file + rename. Reads load once and cache
- * in memory; subsequent writes invalidate via re-assignment.
- *
- * Capacity is bounded by `maxRecords` (default 10,000). When the limit
- * is hit, oldest-by-`last_accessed_at` records are evicted first.
+ * Default path: `~/.thinkfleet/agentmark/memory.json`. Separate from
+ * Foundations StateStore + Recipes RecipeStore so each has
+ * independent persistence + backup/sync.
  */
 import { mkdir, readFile, writeFile, rename, chmod, unlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import type { MemoryBackend, MemoryBackendDescription, MemorySetInput } from './backend'
 import type { MemoryRecord, MemoryScope, MemorySearchQuery } from './types'
 
-export interface MemoryStoreConfig {
+export interface LocalFileMemoryBackendConfig {
     /** Override the on-disk path (mostly for tests). */
     path?: string
     /** Soft cap on total records before LRU-eviction kicks in. Default: 10000. */
@@ -25,6 +25,9 @@ export interface MemoryStoreConfig {
     defaultScope?: MemoryScope
 }
 
+/** @deprecated Use LocalFileMemoryBackendConfig. */
+export type MemoryStoreConfig = LocalFileMemoryBackendConfig
+
 interface MemoryFile {
     version: 1
     records: Record<string, MemoryRecord>
@@ -32,13 +35,13 @@ interface MemoryFile {
 
 const SCOPE_ORDER: Array<MemoryScope['type']> = ['session', 'agent', 'user', 'project', 'platform']
 
-export class MemoryStore {
+export class LocalFileMemoryBackend implements MemoryBackend {
     readonly filePath: string
     readonly maxRecords: number
     readonly defaultScope?: MemoryScope
     private cached: MemoryFile | null = null
 
-    constructor(config: MemoryStoreConfig = {}) {
+    constructor(config: LocalFileMemoryBackendConfig = {}) {
         this.filePath = config.path
             ?? path.join(os.homedir(), '.thinkfleet', 'agentmark', 'memory.json')
         this.maxRecords = config.maxRecords ?? 10_000
@@ -166,11 +169,12 @@ export class MemoryStore {
     }
 
     /** Stats helper for `describeSessions`. */
-    async describe(): Promise<{ total: number; expired: number; path: string }> {
+    async describe(): Promise<MemoryBackendDescription> {
         const file = await this.load()
         const all = Object.values(file.records)
         const now = Date.now()
         return {
+            kind: 'local-file',
             total: all.length,
             expired: all.filter((r) => r.expires_at && r.expires_at < now).length,
             path: this.filePath,
@@ -286,3 +290,13 @@ function generateRecordId(): string {
             : Math.random().toString(36).slice(2, 16)
     return `mem_${r}`
 }
+
+/**
+ * Backward-compat alias. Old code did `new MemoryStore({ path })`; that
+ * still works — it just constructs the local-file backend under its
+ * descriptive name.
+ *
+ * @deprecated Prefer `LocalFileMemoryBackend` or pass a `MemoryBackend`
+ * directly to `createMemoryPlugin({ backend })`.
+ */
+export const MemoryStore = LocalFileMemoryBackend
