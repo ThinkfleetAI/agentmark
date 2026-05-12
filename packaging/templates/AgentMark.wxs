@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    WiX 4 manifest for the AgentMark Windows MSI.
+    Tokens substituted by build-windows.ps1:
+      __VERSION__       — package.json version (e.g. 0.12.0)
+      __BUNDLE_ID__     — ai.thinkfleet.agentmark
+      __DISPLAY_NAME__  — ThinkFleet AgentMark
+      __STAGE_DIR__     — absolute path to the staging directory
+                          (with backslashes already escaped)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+        Name="__DISPLAY_NAME__"
+        Manufacturer="ThinkFleet AI, Inc."
+        Version="__VERSION__"
+        UpgradeCode="b3c4a1d2-5e6f-4a7b-8c9d-0123456789ab"
+        Scope="perMachine">
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of __DISPLAY_NAME__ is already installed."/>
+
+        <!-- Embed the cab inside the MSI for a single-file installer. -->
+        <MediaTemplate EmbedCab="yes"/>
+
+        <Feature Id="MainFeature" Title="__DISPLAY_NAME__" Level="1">
+            <ComponentGroupRef Id="MainComponents"/>
+        </Feature>
+
+        <!-- Standard install: %ProgramFiles%\ThinkFleet\AgentMark\ -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="THINKFLEETDIR" Name="ThinkFleet">
+                <Directory Id="INSTALLFOLDER" Name="AgentMark"/>
+            </Directory>
+        </StandardDirectory>
+
+        <!-- HarvestDirectory pulls in every file under the staging dir. -->
+        <ComponentGroup Id="MainComponents" Directory="INSTALLFOLDER">
+            <Files Include="__STAGE_DIR__\**"/>
+        </ComponentGroup>
+
+        <!-- Add the install dir to the machine PATH so `agentmark-mcp`
+             is callable from any cmd / PowerShell session. -->
+        <Component Id="PathEntry" Directory="INSTALLFOLDER" Guid="a4b5c6d7-8e9f-4123-9876-543210fedcba">
+            <Environment
+                Id="UpdatePath"
+                Name="PATH"
+                Value="[INSTALLFOLDER]"
+                Permanent="no"
+                Part="last"
+                Action="set"
+                System="yes"/>
+            <RegistryValue Root="HKLM" Key="Software\ThinkFleet\AgentMark" Name="Installed" Type="integer" Value="1" KeyPath="yes"/>
+        </Component>
+        <Feature Id="PathFeature" Title="Add to PATH" Level="1">
+            <ComponentRef Id="PathEntry"/>
+        </Feature>
+    </Package>
+</Wix>
