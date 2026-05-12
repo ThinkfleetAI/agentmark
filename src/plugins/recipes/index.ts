@@ -149,8 +149,6 @@ function recipeSummary(r: Recipe): Record<string, unknown> {
 
 export { LocalFileRecipeBackend, RecipeStore } from './store'
 export type { LocalFileRecipeBackendConfig, RecipeStoreConfig } from './store'
-export { RemoteRecipeBackend, RemoteRecipeError } from './remote-backend'
-export type { RemoteRecipeBackendConfig } from './remote-backend'
 export type { RecipeBackend, RecipeBackendDescription } from './backend'
 export { resolveRecipe, substitute, applyParameterSchema } from './substitute'
 export { RECIPES_TOOLS } from './tool-defs'

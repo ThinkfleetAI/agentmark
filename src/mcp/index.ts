@@ -102,11 +102,11 @@ export type {
 } from '../plugins/system'
 
 // Recipes Pack — durable named playbooks the agent learns once + replays.
+// Local-file backend only for now; Activepieces recipes endpoints don't
+// exist yet so we don't ship a speculative HTTP backend.
 export {
     createRecipesPlugin,
     LocalFileRecipeBackend,
-    RemoteRecipeBackend,
-    RemoteRecipeError,
     RecipeStore,
     RECIPES_TOOLS,
 } from '../plugins/recipes'
@@ -119,17 +119,18 @@ export type {
     RecipeBackend,
     RecipeBackendDescription,
     LocalFileRecipeBackendConfig,
-    RemoteRecipeBackendConfig,
 } from '../plugins/recipes'
 
 // Memory Pack — hierarchical persistent memory for AI agents. Opt-in;
 // targeted at IDE coding-assistant integrations where per-session
-// amnesia is the dominant UX limitation.
+// amnesia is the dominant UX limitation. Two production-ready backends:
+// LocalFile (default, single-user) and Activepieces (multi-user, hits
+// the live ThinkFleet agent-memory API).
 export {
     createMemoryPlugin,
     LocalFileMemoryBackend,
-    RemoteMemoryBackend,
-    RemoteMemoryError,
+    ActivepiecesMemoryBackend,
+    ActivepiecesMemoryError,
     MemoryStore,
     MEMORY_TOOLS,
 } from '../plugins/memory'
@@ -143,7 +144,7 @@ export type {
     MemoryBackendDescription,
     MemorySetInput,
     LocalFileMemoryBackendConfig,
-    RemoteMemoryBackendConfig,
+    ActivepiecesMemoryBackendConfig,
 } from '../plugins/memory'
 
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
