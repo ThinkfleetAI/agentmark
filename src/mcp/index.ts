@@ -104,6 +104,9 @@ export type {
 // Recipes Pack — durable named playbooks the agent learns once + replays.
 export {
     createRecipesPlugin,
+    LocalFileRecipeBackend,
+    RemoteRecipeBackend,
+    RemoteRecipeError,
     RecipeStore,
     RECIPES_TOOLS,
 } from '../plugins/recipes'
@@ -113,6 +116,10 @@ export type {
     RecipeStep,
     RecipeParameter,
     RecipeVerification,
+    RecipeBackend,
+    RecipeBackendDescription,
+    LocalFileRecipeBackendConfig,
+    RemoteRecipeBackendConfig,
 } from '../plugins/recipes'
 
 // Memory Pack — hierarchical persistent memory for AI agents. Opt-in;
@@ -120,6 +127,9 @@ export type {
 // amnesia is the dominant UX limitation.
 export {
     createMemoryPlugin,
+    LocalFileMemoryBackend,
+    RemoteMemoryBackend,
+    RemoteMemoryError,
     MemoryStore,
     MEMORY_TOOLS,
 } from '../plugins/memory'
@@ -129,6 +139,11 @@ export type {
     MemoryScope,
     MemoryScopeType,
     MemorySearchQuery,
+    MemoryBackend,
+    MemoryBackendDescription,
+    MemorySetInput,
+    LocalFileMemoryBackendConfig,
+    RemoteMemoryBackendConfig,
 } from '../plugins/memory'
 
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the

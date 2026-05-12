@@ -12,22 +12,32 @@
  * right place. agentmark_memory_get can walk the scope hierarchy in
  * one call.
  */
-import { MemoryStore } from './store'
+import { LocalFileMemoryBackend } from './store'
 import { MEMORY_TOOLS } from './tool-defs'
+import type { MemoryBackend } from './backend'
 import type { MemoryScope } from './types'
 import type { AgentMarkPlugin, DispatchResult, ToolHandler } from '../../mcp/plugin'
 
 export interface MemoryPluginConfig {
-    /** Override the on-disk store path. */
+    /**
+     * Storage backend. Pass a `RemoteMemoryBackend` to point at an
+     * on-prem or cloud ThinkFleet memory service. Defaults to a
+     * `LocalFileMemoryBackend` at ~/.thinkfleet/agentmark/memory.json.
+     */
+    backend?: MemoryBackend
+    /** Local-file backend convenience: override the on-disk store path.
+     *  Ignored when `backend` is supplied. */
     storePath?: string
-    /** Soft cap on total records before LRU eviction. Default: 10000. */
+    /** Local-file backend convenience: soft LRU cap. Ignored when
+     *  `backend` is supplied. Default: 10000. */
     maxRecords?: number
-    /** Default scope to apply when callers omit one. */
+    /** Default scope to apply when callers omit one. Ignored when
+     *  `backend` is supplied (configure on the backend instead). */
     defaultScope?: MemoryScope
 }
 
 export function createMemoryPlugin(config: MemoryPluginConfig = {}): AgentMarkPlugin {
-    const store = new MemoryStore({
+    const store: MemoryBackend = config.backend ?? new LocalFileMemoryBackend({
         path: config.storePath,
         maxRecords: config.maxRecords,
         defaultScope: config.defaultScope,
@@ -100,17 +110,29 @@ export function createMemoryPlugin(config: MemoryPluginConfig = {}): AgentMarkPl
         },
     }
 
+    // describeSessions is synchronous; pre-compute the static parts here
+    // and let `describe()` (async) feed into agentmark_capabilities via
+    // its own code path. The static description is enough for routine
+    // diagnostics.
+    const isLocalFile = store instanceof LocalFileMemoryBackend
+
     return {
         name: 'memory',
         version: '0.1.0',
         tools: MEMORY_TOOLS,
         handlers,
         describeSessions: () => ({
-            memory: {
-                store_path: store.filePath,
-                max_records: store.maxRecords,
-                default_scope: store.defaultScope,
-            },
+            memory: isLocalFile
+                ? {
+                    kind: 'local-file',
+                    store_path: (store as LocalFileMemoryBackend).filePath,
+                    max_records: (store as LocalFileMemoryBackend).maxRecords,
+                    default_scope: (store as LocalFileMemoryBackend).defaultScope,
+                }
+                : {
+                    kind: 'custom',
+                    backend_class: store.constructor.name,
+                },
         }),
     }
 }
@@ -145,7 +167,11 @@ function optionalStringArray(v: unknown): string[] | undefined {
     return v as string[]
 }
 
-export { MemoryStore } from './store'
+export { LocalFileMemoryBackend, MemoryStore } from './store'
+export type { LocalFileMemoryBackendConfig, MemoryStoreConfig } from './store'
+export { RemoteMemoryBackend, RemoteMemoryError } from './remote-backend'
+export type { RemoteMemoryBackendConfig } from './remote-backend'
+export type { MemoryBackend, MemoryBackendDescription, MemorySetInput } from './backend'
 export { MEMORY_TOOLS } from './tool-defs'
 export type {
     MemoryRecord,
