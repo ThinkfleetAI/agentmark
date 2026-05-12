@@ -35,6 +35,8 @@ import type {
     DesktopCaptureBackend,
     DesktopTargetSummary,
     ExecuteDesktopAction,
+    ExecuteDesktopBatchOptions,
+    ExecuteDesktopBatchResult,
     ExecuteDesktopOptions,
     ExecuteDesktopResult,
     KeyModifier,
@@ -146,6 +148,32 @@ export class MacosAxapiBackend implements DesktopCaptureBackend {
             ok: !!result.ok,
             message: result.message ?? undefined,
             new_value: result.newValue ?? undefined,
+        }
+    }
+
+    async executeBatch(opts: ExecuteDesktopBatchOptions): Promise<ExecuteDesktopBatchResult> {
+        await this.ensureStarted()
+        const params: Record<string, unknown> = {
+            actions: opts.actions.map((a) => buildExecuteParams(a)),
+            onError: opts.on_error ?? 'stop',
+        }
+        if (opts.timeoutMs !== undefined) params.timeoutMs = opts.timeoutMs
+
+        const raw = (await this.callWithTimeout(
+            'execute_batch',
+            params,
+            opts.timeoutMs ?? Math.max(5000, opts.actions.length * 50),
+        )) as { results?: RawExecuteResult[]; allOk?: boolean; executedCount?: number }
+
+        const results = (raw.results ?? []).map((r) => ({
+            ok: !!r.ok,
+            message: r.message ?? undefined,
+            new_value: r.newValue ?? undefined,
+        }))
+        return {
+            results,
+            all_ok: typeof raw.allOk === 'boolean' ? raw.allOk : results.every((r) => r.ok),
+            executed_count: typeof raw.executedCount === 'number' ? raw.executedCount : results.length,
         }
     }
 

@@ -205,14 +205,15 @@ internal sealed class RpcDispatcher : IDisposable
     {
         return method switch
         {
-            "ping"         => HandlePing(),
-            "capabilities" => HandleCapabilities(),
-            "list_windows" => HandleListWindows(),
-            "capture"      => HandleCapture(@params),
-            "execute"      => HandleExecute(@params),
+            "ping"          => HandlePing(),
+            "capabilities"  => HandleCapabilities(),
+            "list_windows"  => HandleListWindows(),
+            "capture"       => HandleCapture(@params),
+            "execute"       => HandleExecute(@params),
+            "execute_batch" => HandleExecuteBatch(@params),
             _ => throw new RpcException(
                 RpcError.MethodNotFound,
-                $"Unknown method: {method}. Supported: ping, capabilities, list_windows, capture, execute."),
+                $"Unknown method: {method}. Supported: ping, capabilities, list_windows, capture, execute, execute_batch."),
         };
     }
 
@@ -247,6 +248,7 @@ internal sealed class RpcDispatcher : IDisposable
             "list_windows",
             "capture",
             "execute",
+            "execute_batch",
         },
         uiaProvider = "FlaUI.UIA3",
         platform = "windows",
@@ -288,22 +290,7 @@ internal sealed class RpcDispatcher : IDisposable
 
     private object HandleExecute(JsonElement @params)
     {
-        var modifiers = ReadStringArray(@params, "modifiers");
-
-        var req = new UiaCapturer.ExecuteRequest
-        {
-            ElementId = ReadString(@params, "elementId")
-                ?? throw new RpcException(RpcError.InvalidParams, "execute requires `elementId`."),
-            ActionType = ReadString(@params, "actionType") ?? "click",
-            Text = ReadString(@params, "text"),
-            Value = ReadString(@params, "value"),
-            Checked = ReadBool(@params, "checked"),
-            Expanded = ReadBool(@params, "expanded"),
-            Key = ReadString(@params, "key"),
-            Modifiers = modifiers,
-            ClearFirst = ReadBool(@params, "clearFirst") ?? false,
-            TimeoutMs = ReadInt(@params, "timeoutMs") ?? 5000,
-        };
+        var req = BuildExecuteRequest(@params);
 
         try
         {
@@ -321,6 +308,82 @@ internal sealed class RpcDispatcher : IDisposable
         {
             throw new RpcException(RpcError.InternalError, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Run a sequence of actions inside the same STA invocation so the entire
+    /// batch costs one stdio round-trip. Honours `onError: stop | continue`
+    /// to abort or keep going past failures.
+    /// </summary>
+    private object HandleExecuteBatch(JsonElement @params)
+    {
+        if (!@params.TryGetProperty("actions", out var actionsEl) || actionsEl.ValueKind != JsonValueKind.Array)
+        {
+            throw new RpcException(RpcError.InvalidParams, "execute_batch requires an `actions` array.");
+        }
+
+        var stopOnError = (ReadString(@params, "onError") ?? "stop") != "continue";
+
+        var requests = new List<UiaCapturer.ExecuteRequest>(actionsEl.GetArrayLength());
+        foreach (var actionEl in actionsEl.EnumerateArray())
+        {
+            requests.Add(BuildExecuteRequest(actionEl));
+        }
+
+        var results = new List<object>(requests.Count);
+        var allOk = true;
+
+        try
+        {
+            var capturer = _capturer.Value;
+            var sta = _staWorker.Value;
+            sta.Invoke(() =>
+            {
+                foreach (var req in requests)
+                {
+                    var r = capturer.Execute(req);
+                    results.Add(new { ok = r.Ok, message = r.Message, newValue = r.NewValue });
+                    if (!r.Ok)
+                    {
+                        allOk = false;
+                        if (stopOnError) break;
+                    }
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RpcException(RpcError.InternalError, ex.Message);
+        }
+
+        return new
+        {
+            results = results.ToArray(),
+            allOk,
+            executedCount = results.Count,
+        };
+    }
+
+    /// <summary>
+    /// Pull an ExecuteRequest out of a JSON params blob. Shared between the
+    /// single-execute and batch-execute paths.
+    /// </summary>
+    private static UiaCapturer.ExecuteRequest BuildExecuteRequest(JsonElement @params)
+    {
+        return new UiaCapturer.ExecuteRequest
+        {
+            ElementId = ReadString(@params, "elementId")
+                ?? throw new RpcException(RpcError.InvalidParams, "execute action requires `elementId`."),
+            ActionType = ReadString(@params, "actionType") ?? "click",
+            Text = ReadString(@params, "text"),
+            Value = ReadString(@params, "value"),
+            Checked = ReadBool(@params, "checked"),
+            Expanded = ReadBool(@params, "expanded"),
+            Key = ReadString(@params, "key"),
+            Modifiers = ReadStringArray(@params, "modifiers"),
+            ClearFirst = ReadBool(@params, "clearFirst") ?? false,
+            TimeoutMs = ReadInt(@params, "timeoutMs") ?? 5000,
+        };
     }
 
     private static string[]? ReadStringArray(JsonElement parent, string name)

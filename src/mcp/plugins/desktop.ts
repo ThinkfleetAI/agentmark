@@ -146,6 +146,59 @@ const DESKTOP_TOOLS: McpToolDef[] = [
             required: ['desktop_id', 'action_id'],
         },
     },
+    {
+        name: 'agentmark_desktop_execute_batch',
+        description:
+            'Run a sequence of actions in ONE round-trip. Use this for any '
+            + 'workflow that drives more than a handful of elements — form '
+            + 'fills, bulk Excel cell writes, table populations. The actions '
+            + 'array is processed in order. Each entry is an `action_id` '
+            + 'from the most recent snapshot plus optional input data '
+            + '(same shape as agentmark_desktop_execute, minus desktop_id).\n'
+            + '\nBackends that support a native batched path (windows_uia, '
+            + 'macos_axapi) run the whole array inside the sidecar without '
+            + 'crossing back to Node between actions; the fixture backend '
+            + 'simulates this. Net effect: a 1000-action batch costs ~1 '
+            + 'MCP dispatch + ~1 stdio round-trip instead of 1000 each.\n'
+            + '\nReturns one result per executed action, an `all_ok` flag, '
+            + 'and `executed_count` (which may be less than actions.length '
+            + 'when on_error="stop" hits a failure).',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                actions: {
+                    type: 'array',
+                    description: 'Sequence of actions to run.',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            action_id: { type: 'string' },
+                            value: { description: 'Value for input actions (same semantics as agentmark_desktop_execute).' },
+                            modifiers: {
+                                type: 'array',
+                                items: { type: 'string', enum: ['ctrl', 'alt', 'shift', 'meta', 'win'] },
+                            },
+                            clear_first: { type: 'boolean' },
+                        },
+                        required: ['action_id'],
+                    },
+                },
+                on_error: {
+                    type: 'string',
+                    enum: ['stop', 'continue'],
+                    description:
+                        '"stop" (default): abort the rest of the batch on '
+                        + 'the first failure. "continue": run every action '
+                        + 'regardless. Pick "stop" for ordered workflows '
+                        + 'where a missing prerequisite invalidates the '
+                        + 'rest; "continue" for independent bulk fills.',
+                },
+                timeout_ms: { type: 'number', description: 'Per-batch timeout. Default scales with action count.' },
+            },
+            required: ['desktop_id', 'actions'],
+        },
+    },
 ]
 
 export interface DesktopPlugin extends AgentMarkPlugin {
@@ -290,6 +343,103 @@ export function createDesktopPlugin(): DesktopPlugin {
                     ...(result.new_value !== undefined ? { new_value: result.new_value } : {}),
                 }, null, 2),
                 isError: !result.ok,
+            }
+        },
+
+        agentmark_desktop_execute_batch: async (args): Promise<DispatchResult> => {
+            const id = requireString(args, 'desktop_id')
+            const session = requireDesktop(id)
+
+            if (!session.lastBinding || !session.lastActionTypes) {
+                return {
+                    text:
+                        `No cached snapshot for desktop_id ${id}. Call `
+                        + `agentmark_desktop_snapshot first so action_ids can be resolved.`,
+                    isError: true,
+                }
+            }
+
+            const rawActions = args.actions
+            if (!Array.isArray(rawActions) || rawActions.length === 0) {
+                return { text: '`actions` must be a non-empty array.', isError: true }
+            }
+
+            // Resolve every action_id to its (action_type, element_id) up
+            // front. If any are unknown we fail fast — saves the round-trip
+            // for an invariably-doomed batch.
+            const resolved: Array<{
+                action_id: string
+                action_type: string
+                element_id: string
+                action: ReturnType<typeof buildExecuteAction>
+            }> = []
+            for (let i = 0; i < rawActions.length; i++) {
+                const item = rawActions[i] as Record<string, unknown>
+                const actionId = typeof item?.action_id === 'string' ? item.action_id : ''
+                if (!actionId) {
+                    return { text: `actions[${i}].action_id is required.`, isError: true }
+                }
+                const elementId = session.lastBinding.get(actionId)
+                if (!elementId) {
+                    return { text: `Unknown action_id at index ${i}: ${actionId}`, isError: true }
+                }
+                const actionType = session.lastActionTypes.get(actionId) ?? 'click'
+                const modifiers = parseModifiers(item.modifiers)
+                const clearFirst = item.clear_first === true
+                const action = buildExecuteAction(actionType, elementId, item.value, modifiers, clearFirst)
+                resolved.push({ action_id: actionId, action_type: actionType, element_id: elementId, action })
+            }
+
+            const onError =
+                args.on_error === 'continue' || args.on_error === 'stop'
+                    ? (args.on_error as 'stop' | 'continue')
+                    : 'stop'
+            const timeoutMs = typeof args.timeout_ms === 'number' ? args.timeout_ms : undefined
+
+            // Use the backend's native batched path when available; otherwise
+            // loop execute() so the tool still has the same surface (only
+            // savings is per-MCP-call overhead).
+            let batchResult: { results: Array<{ ok: boolean; message?: string; new_value?: string }>; all_ok: boolean; executed_count: number }
+            if (typeof session.backend.executeBatch === 'function') {
+                const raw = await session.backend.executeBatch({
+                    target: session.lastTarget,
+                    actions: resolved.map((r) => r.action),
+                    on_error: onError,
+                    timeoutMs,
+                })
+                batchResult = {
+                    results: raw.results.map((r) => ({ ...r })),
+                    all_ok: raw.all_ok,
+                    executed_count: raw.executed_count,
+                }
+            } else {
+                const results: Array<{ ok: boolean; message?: string; new_value?: string }> = []
+                for (const r of resolved) {
+                    const res = await session.backend.execute({ target: session.lastTarget, action: r.action })
+                    results.push({ ok: res.ok, message: res.message, new_value: res.new_value })
+                    if (!res.ok && onError === 'stop') break
+                }
+                batchResult = {
+                    results,
+                    all_ok: results.every((r) => r.ok),
+                    executed_count: results.length,
+                }
+            }
+
+            return {
+                text: JSON.stringify({
+                    all_ok: batchResult.all_ok,
+                    executed_count: batchResult.executed_count,
+                    requested_count: resolved.length,
+                    results: batchResult.results.map((r, i) => ({
+                        action_id: resolved[i]?.action_id,
+                        action_type: resolved[i]?.action_type,
+                        ok: r.ok,
+                        ...(r.message !== undefined ? { message: r.message } : {}),
+                        ...(r.new_value !== undefined ? { new_value: r.new_value } : {}),
+                    })),
+                }, null, 2),
+                isError: !batchResult.all_ok,
             }
         },
     }

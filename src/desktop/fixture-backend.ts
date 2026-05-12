@@ -18,7 +18,11 @@ import type {
     DesktopCaptureBackend,
     CaptureDesktopOptions,
     DesktopElement,
+    DesktopTarget,
     DesktopTargetSummary,
+    ExecuteDesktopAction,
+    ExecuteDesktopBatchOptions,
+    ExecuteDesktopBatchResult,
     ExecuteDesktopOptions,
     ExecuteDesktopResult,
 } from './types'
@@ -100,6 +104,47 @@ export class FixtureBackend implements DesktopCaptureBackend {
             case 'select':
                 this.elementValues.set(opts.action.element_id, opts.action.value)
                 return { ok: true, new_value: opts.action.value }
+            default:
+                return { ok: true }
+        }
+    }
+
+    async executeBatch(opts: ExecuteDesktopBatchOptions): Promise<ExecuteDesktopBatchResult> {
+        // The fixture pays its `latencyMs` once for the whole batch — modelling
+        // a bridge that processes the whole array inside its sidecar. The
+        // looped-execute fallback in WindowsUiaBackend / MacosAxapiBackend
+        // pays it per call.
+        if (this.latencyMs) await delay(this.latencyMs)
+
+        const results: ExecuteDesktopResult[] = []
+        const onError = opts.on_error ?? 'stop'
+        for (const action of opts.actions) {
+            const result = await this.executeAction(opts.target, action)
+            results.push(result)
+            if (!result.ok && onError === 'stop') break
+        }
+        return {
+            results,
+            all_ok: results.every((r) => r.ok),
+            executed_count: results.length,
+        }
+    }
+
+    private async executeAction(
+        target: DesktopTarget | undefined,
+        action: ExecuteDesktopAction,
+    ): Promise<ExecuteDesktopResult> {
+        this.executed.push({ target, action })
+        switch (action.type) {
+            case 'type':
+                this.elementValues.set(action.element_id, action.text)
+                return { ok: true, new_value: action.text }
+            case 'check':
+                this.elementValues.set(action.element_id, action.checked ? 'true' : 'false')
+                return { ok: true, new_value: String(action.checked) }
+            case 'select':
+                this.elementValues.set(action.element_id, action.value)
+                return { ok: true, new_value: action.value }
             default:
                 return { ok: true }
         }

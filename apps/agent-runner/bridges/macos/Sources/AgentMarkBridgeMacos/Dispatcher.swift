@@ -29,10 +29,12 @@ final class Dispatcher {
                 return try handleCapture(params: request.params)
             case "execute":
                 return try handleExecute(params: request.params)
+            case "execute_batch":
+                return try handleExecuteBatch(params: request.params)
             default:
                 throw RpcError(
                     code: .methodNotFound,
-                    message: "Unknown method: \(request.method). Supported: ping, capabilities, list_windows, capture, execute.",
+                    message: "Unknown method: \(request.method). Supported: ping, capabilities, list_windows, capture, execute, execute_batch.",
                     requestId: request.id
                 )
             }
@@ -55,7 +57,7 @@ final class Dispatcher {
         return [
             "bridge": "agentmark-bridge-macos",
             "version": bridgeVersion,
-            "methods": ["ping", "capabilities", "list_windows", "capture", "execute"],
+            "methods": ["ping", "capabilities", "list_windows", "capture", "execute", "execute_batch"],
             "axapiProvider": "Accessibility (AXAPI)",
             "platform": "macos",
             "accessibilityGranted": AccessibilityPermission.isGranted,
@@ -83,9 +85,60 @@ final class Dispatcher {
     }
 
     private func handleExecute(params: JsonValue?) throws -> Any {
+        guard let p = params else {
+            throw RpcError(code: .invalidParams, message: "execute requires params.")
+        }
+        let req = try buildExecuteRequest(p)
+        return try capturer.execute(req)
+    }
+
+    /// Run N actions in one in-process loop so the entire batch costs one
+    /// stdio round-trip. `onError: stop` (default) aborts on the first
+    /// failure; `onError: continue` runs the full array regardless.
+    private func handleExecuteBatch(params: JsonValue?) throws -> Any {
         guard let p = params,
-              let elementId = p.string("elementId"), !elementId.isEmpty else {
-            throw RpcError(code: .invalidParams, message: "execute requires `elementId`.")
+              let actionsAny = p.dict?["actions"],
+              case .array(let actionArray) = JsonValue.fromAny(actionsAny) else {
+            throw RpcError(code: .invalidParams, message: "execute_batch requires an `actions` array.")
+        }
+
+        let stopOnError = (p.string("onError") ?? "stop") != "continue"
+
+        var results: [[String: Any]] = []
+        results.reserveCapacity(actionArray.count)
+        var allOk = true
+
+        for actionAny in actionArray {
+            let actionParam = JsonValue.fromAny(actionAny)
+            let req: AxapiCapturer.ExecuteRequest
+            do {
+                req = try buildExecuteRequest(actionParam)
+            } catch {
+                results.append(["ok": false, "message": "\(error)"])
+                allOk = false
+                if stopOnError { break }
+                continue
+            }
+            let r = try capturer.execute(req)
+            // `capturer.execute` returns `[String: Any]` with `ok` / `message` / `newValue`.
+            let normalized = r as? [String: Any] ?? [:]
+            results.append(normalized)
+            if let ok = normalized["ok"] as? Bool, !ok {
+                allOk = false
+                if stopOnError { break }
+            }
+        }
+
+        return [
+            "results": results,
+            "allOk": allOk,
+            "executedCount": results.count,
+        ] as [String: Any]
+    }
+
+    private func buildExecuteRequest(_ p: JsonValue) throws -> AxapiCapturer.ExecuteRequest {
+        guard let elementId = p.string("elementId"), !elementId.isEmpty else {
+            throw RpcError(code: .invalidParams, message: "execute action requires `elementId`.")
         }
         var req = AxapiCapturer.ExecuteRequest()
         req.elementId = elementId
@@ -100,6 +153,6 @@ final class Dispatcher {
         }
         req.clearFirst = p.bool("clearFirst") ?? false
         if let i = p.int("timeoutMs") { req.timeoutMs = i }
-        return try capturer.execute(req)
+        return req
     }
 }
