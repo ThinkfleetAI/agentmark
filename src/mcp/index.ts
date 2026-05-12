@@ -100,6 +100,20 @@ export type {
     SpeakOptions,
 } from '../plugins/system'
 
+// Recipes Pack — durable named playbooks the agent learns once + replays.
+export {
+    createRecipesPlugin,
+    RecipeStore,
+    RECIPES_TOOLS,
+} from '../plugins/recipes'
+export type {
+    RecipesPluginConfig,
+    Recipe,
+    RecipeStep,
+    RecipeParameter,
+    RecipeVerification,
+} from '../plugins/recipes'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
