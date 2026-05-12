@@ -1,0 +1,134 @@
+name: Release
+
+# Triggers on version tags (e.g. v0.12.0). Builds installers on every
+# target platform in parallel and attaches them to the GitHub Release.
+# Signing is conditional on the matching secret being present — missing
+# secrets skip signing rather than failing the build, so this workflow
+# works for internal-test releases before code-signing certs are in place.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name (e.g. v0.12.0) — used to name artifacts when running manually'
+        required: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # macOS — produces AgentMark-<version>-macos.pkg
+  # ──────────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node (build-time)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Build .pkg
+        env:
+          # Optional signing — workflow runs without these too.
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_APP_NOTARIZATION_USER: ${{ secrets.APPLE_APP_NOTARIZATION_USER }}
+          APPLE_APP_NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_APP_NOTARIZATION_TEAM_ID }}
+          APPLE_APP_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_APP_NOTARIZATION_PASSWORD }}
+        run: |
+          # Import code-signing cert into a temporary keychain if provided.
+          # The .p12 is base64-encoded in the secret.
+          if [[ -n "${{ secrets.APPLE_CERT_P12_BASE64 }}" ]]; then
+            KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+            KEYCHAIN_PASSWORD=$(uuidgen)
+            CERT_PATH=$RUNNER_TEMP/codesign.p12
+            echo -n "${{ secrets.APPLE_CERT_P12_BASE64 }}" | base64 --decode > "$CERT_PATH"
+
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security import "$CERT_PATH" -P "${{ secrets.APPLE_CERT_P12_PASSWORD }}" \
+              -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychain -d user | xargs)
+            rm "$CERT_PATH"
+          fi
+
+          chmod +x packaging/scripts/*.sh
+          packaging/scripts/build-macos.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentmark-macos
+          path: dist/installer/*.pkg
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────────
+  # Windows — produces AgentMark-<version>-windows.msi
+  # ──────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node (build-time)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build .msi
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          .\packaging\scripts\build-windows.ps1
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentmark-windows
+          path: dist/installer/*.msi
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────────
+  # Attach artifacts to the GitHub Release (only on tag pushes).
+  # ──────────────────────────────────────────────────────────────────
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/agentmark-macos/*.pkg
+            artifacts/agentmark-windows/*.msi
+          draft: true
+          fail_on_unmatched_files: true

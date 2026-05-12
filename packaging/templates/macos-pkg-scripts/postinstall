@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# pkgbuild post-install script.
+#
+# Runs as root after the installer extracts files to /opt/thinkfleet/agentmark/.
+# Job: drop a symlink in /usr/local/bin so `agentmark-mcp` is on the
+# user's PATH out of the box.
+
+set -e
+
+INSTALL_ROOT="/opt/thinkfleet/agentmark"
+LAUNCHER="$INSTALL_ROOT/bin/agentmark-mcp"
+SYMLINK="/usr/local/bin/agentmark-mcp"
+
+# /usr/local/bin must exist before we can symlink into it. On a fresh
+# macOS install without Homebrew it sometimes doesn't.
+mkdir -p /usr/local/bin
+
+# Atomic-ish: write to a temp name, then move into place.
+ln -sf "$LAUNCHER" "$SYMLINK.tmp"
+mv -f "$SYMLINK.tmp" "$SYMLINK"
+
+# Make the bridge executable bit survives the tar extraction.
+chmod +x "$INSTALL_ROOT/bridges/agentmark-bridge-macos"
+chmod +x "$INSTALL_ROOT/node"
+chmod +x "$INSTALL_ROOT/bin/agentmark-mcp"
+
+exit 0

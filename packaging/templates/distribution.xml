@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!--
+    productbuild Distribution.xml for the ThinkFleet AgentMark .pkg.
+    Substitution tokens are replaced by build-macos.sh before this is
+    handed to productbuild:
+      __VERSION__       — package.json version
+      __BUNDLE_ID__     — ai.thinkfleet.agentmark (or override)
+      __DISPLAY_NAME__  — ThinkFleet AgentMark
+-->
+<installer-gui-script minSpecVersion="1">
+    <title>__DISPLAY_NAME__</title>
+    <organization>ai.thinkfleet</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="11.0"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="agentmark"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="agentmark" visible="false" title="__DISPLAY_NAME__">
+        <pkg-ref id="__BUNDLE_ID__"/>
+    </choice>
+
+    <pkg-ref id="__BUNDLE_ID__" version="__VERSION__" auth="Root">agentmark-component.pkg</pkg-ref>
+</installer-gui-script>
