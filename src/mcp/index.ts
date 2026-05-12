@@ -33,6 +33,7 @@ export { createWebPlugin, type WebPlugin } from './plugins/web'
 export { createPdfPlugin, type PdfPlugin } from './plugins/pdf'
 export { createDesktopPlugin, type DesktopPlugin } from './plugins/desktop'
 export { createMetaPlugin } from './plugins/meta'
+export type { MetaPluginConfig } from './plugins/meta'
 
 // Foundations Pack — OS-basics plugin (app launcher, clipboard, allowlisted
 // filesystem, durable state K/V). Opt-in.
