@@ -93,6 +93,11 @@ export async function startMcpServer(
     }
     process.once('SIGINT', onShutdown)
     process.once('SIGTERM', onShutdown)
+    // If the client dies without sending a signal (Windows terminal close,
+    // Claude Code session exit, lost ssh pipe), stdin closes but the
+    // process otherwise has nothing to exit on. Don't let zombies pile up.
+    process.stdin.once('end', onShutdown)
+    process.stdin.once('close', onShutdown)
 
     return { stop }
 }
