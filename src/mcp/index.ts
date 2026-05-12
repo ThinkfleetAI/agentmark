@@ -114,6 +114,22 @@ export type {
     RecipeVerification,
 } from '../plugins/recipes'
 
+// Memory Pack — hierarchical persistent memory for AI agents. Opt-in;
+// targeted at IDE coding-assistant integrations where per-session
+// amnesia is the dominant UX limitation.
+export {
+    createMemoryPlugin,
+    MemoryStore,
+    MEMORY_TOOLS,
+} from '../plugins/memory'
+export type {
+    MemoryPluginConfig,
+    MemoryRecord,
+    MemoryScope,
+    MemoryScopeType,
+    MemorySearchQuery,
+} from '../plugins/memory'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
