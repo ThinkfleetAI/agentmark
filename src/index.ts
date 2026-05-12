@@ -217,6 +217,9 @@ export type {
 export {
     convertDesktop,
     diffDesktopCaptures,
+    computeFingerprint,
+    findByFingerprint,
+    scoreFingerprintMatch,
     FixtureBackend,
     WindowsUiaBackend,
     MacosAxapiBackend,
@@ -238,6 +241,7 @@ export type {
     DesktopElementSummary,
     DesktopRole,
     DesktopTarget,
+    ElementFingerprint,
     ExecuteDesktopOptions,
     ExecuteDesktopAction,
     ExecuteDesktopBatchOptions,

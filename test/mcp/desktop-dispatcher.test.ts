@@ -327,6 +327,79 @@ describe('MCP — desktop tools', () => {
         expect(diff.text).toContain('No cached capture')
     })
 
+    it('agentmark_desktop_fingerprint returns a structural signature for an action_id', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const result = await dispatch(state, 'agentmark_desktop_fingerprint', {
+            desktop_id,
+            action_id: 'act_in_company',
+        })
+        expect(result.isError).toBeFalsy()
+        const body = JSON.parse(result.text)
+        expect(body.found).toBe(true)
+        expect(body.element_id).toBe('in_company')
+        expect(body.fingerprint.role).toBe('text_input')
+    })
+
+    it('agentmark_desktop_fingerprint errors when neither action_id nor element_id is supplied', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+        await dispatch(state, 'agentmark_desktop_snapshot', { desktop_id })
+
+        const result = await dispatch(state, 'agentmark_desktop_fingerprint', { desktop_id })
+        expect(result.isError).toBe(true)
+        expect(result.text).toMatch(/action_id.*element_id/)
+    })
+
+    it('agentmark_desktop_find_by_fingerprint resolves a saved fingerprint back to the current element', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const fpResult = await dispatch(state, 'agentmark_desktop_fingerprint', {
+            desktop_id,
+            action_id: 'act_in_company',
+        })
+        const { fingerprint } = JSON.parse(fpResult.text)
+
+        const found = await dispatch(state, 'agentmark_desktop_find_by_fingerprint', {
+            desktop_id,
+            fingerprint,
+        })
+        expect(found.isError).toBeFalsy()
+        const body = JSON.parse(found.text)
+        expect(body.found).toBe(true)
+        expect(body.element_id).toBe('in_company')
+        expect(body.score).toBeGreaterThanOrEqual(60)
+    })
+
+    it('agentmark_desktop_find_by_fingerprint returns isError + found=false when nothing matches', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const found = await dispatch(state, 'agentmark_desktop_find_by_fingerprint', {
+            desktop_id,
+            fingerprint: { role: 'text_input', name: 'A field that does not exist anywhere', depth: 5 },
+        })
+        expect(found.isError).toBe(true)
+        const body = JSON.parse(found.text)
+        expect(body.found).toBe(false)
+    })
+
     it('agentmark_desktop_close removes the session', async () => {
         const open = await dispatch(state, 'agentmark_desktop_open', {})
         const { desktop_id } = JSON.parse(open.text)

@@ -12,6 +12,13 @@ export type {
     DesktopElementSummary,
 } from './diff'
 
+export {
+    computeFingerprint,
+    findByFingerprint,
+    scoreFingerprintMatch,
+} from './fingerprint'
+export type { ElementFingerprint } from './fingerprint'
+
 export { FixtureBackend } from './fixture-backend'
 export type { FixtureBackendOptions } from './fixture-backend'
 
