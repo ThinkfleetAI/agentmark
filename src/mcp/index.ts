@@ -47,6 +47,22 @@ export {
 } from '../plugins/foundations'
 export type { FoundationsPluginConfig } from '../plugins/foundations'
 
+// Network Pack — HTTP + WebSocket tools. Opt-in; URL allowlist required.
+export {
+    createNetworkPlugin,
+    UrlAllowlist,
+    WebSocketManager,
+    NETWORK_TOOLS,
+    httpRequest,
+} from '../plugins/network'
+export type {
+    NetworkPluginConfig,
+    HttpRequestArgs,
+    HttpResponse,
+    WebSocketSession,
+    QueuedMessage,
+} from '../plugins/network'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
