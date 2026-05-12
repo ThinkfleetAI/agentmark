@@ -63,6 +63,18 @@ export type {
     QueuedMessage,
 } from '../plugins/network'
 
+// Vision Pack — Layer 2 fallback (screenshot tool). Opt-in.
+export {
+    createVisionPlugin,
+    captureScreenshot,
+    VISION_TOOLS,
+} from '../plugins/vision'
+export type {
+    VisionPluginConfig,
+    ScreenshotOptions,
+    ScreenshotResult,
+} from '../plugins/vision'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
