@@ -34,6 +34,23 @@ export { createPdfPlugin, type PdfPlugin } from './plugins/pdf'
 export { createDesktopPlugin, type DesktopPlugin } from './plugins/desktop'
 export { createMetaPlugin } from './plugins/meta'
 
+// Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
+// default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
+export {
+    createMicrosoftPlugin,
+    MicrosoftAuth,
+    GraphClient,
+    GraphError,
+    NotAuthenticatedError,
+    MICROSOFT_TOOLS,
+} from '../plugins/microsoft'
+export type {
+    MicrosoftPluginConfig,
+    MicrosoftAuthConfig,
+    TokenSet,
+    DeviceCodeStartResponse,
+} from '../plugins/microsoft'
+
 // Tool definition shape + the aggregated default list.
 export { ALL_TOOLS } from './tool-defs'
 export type { McpToolDef } from './tool-defs'
