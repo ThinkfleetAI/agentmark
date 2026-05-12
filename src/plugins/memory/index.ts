@@ -169,8 +169,8 @@ function optionalStringArray(v: unknown): string[] | undefined {
 
 export { LocalFileMemoryBackend, MemoryStore } from './store'
 export type { LocalFileMemoryBackendConfig, MemoryStoreConfig } from './store'
-export { RemoteMemoryBackend, RemoteMemoryError } from './remote-backend'
-export type { RemoteMemoryBackendConfig } from './remote-backend'
+export { ActivepiecesMemoryBackend, ActivepiecesMemoryError } from './activepieces-backend'
+export type { ActivepiecesMemoryBackendConfig } from './activepieces-backend'
 export type { MemoryBackend, MemoryBackendDescription, MemorySetInput } from './backend'
 export { MEMORY_TOOLS } from './tool-defs'
 export type {
