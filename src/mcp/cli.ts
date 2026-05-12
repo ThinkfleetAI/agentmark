@@ -28,11 +28,21 @@ const HELP = `agentmark-mcp — Model Context Protocol server for AgentMark
 USAGE
   agentmark-mcp [serve]                 Start the MCP server (default; speaks stdio)
   agentmark-mcp install [options]       Wire detected AI clients to talk to this server
+  agentmark-mcp setup [options]         Alias for install (more discoverable name)
   agentmark-mcp uninstall [options]     Remove our entry from those clients
   agentmark-mcp doctor                  Diagnose what's installed + wired up
   agentmark-mcp --help                  This help
 
-OPTIONS (install / uninstall)
+QUICKSTART (Node already installed)
+  Run the npm package directly via npx, no global install required:
+
+      npx -y @thinkfleet/agentmark setup
+
+  Detects Claude Code / Claude Desktop / Cursor / Windsurf in one go
+  and wires them all up to use this MCP server. Use --dry-run first
+  to preview.
+
+OPTIONS (install / setup / uninstall)
   --client=<id>     Target specific client(s). Repeat or comma-separate.
                     Known: ${allClients().map((c) => c.id).join(', ')}
   --name=<name>     Entry name to register under (default: agentmark)
@@ -54,7 +64,7 @@ async function main(argv: string[]): Promise<number> {
         return await new Promise<number>(() => { /* never resolves */ })
     }
 
-    if (sub === 'install') {
+    if (sub === 'install' || sub === 'setup' || sub === 'quickstart') {
         return await runInstall(argv.slice(1))
     }
     if (sub === 'uninstall') {
