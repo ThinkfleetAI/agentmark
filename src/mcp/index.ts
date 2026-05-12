@@ -87,6 +87,19 @@ export type {
     ProcessDetail,
 } from '../plugins/process'
 
+// System Pack — native OS notifications + text-to-speech. Opt-in.
+export {
+    createSystemPlugin,
+    notify,
+    speak,
+    SYSTEM_TOOLS,
+} from '../plugins/system'
+export type {
+    SystemPluginConfig,
+    NotifyOptions,
+    SpeakOptions,
+} from '../plugins/system'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
