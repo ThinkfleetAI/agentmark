@@ -216,6 +216,7 @@ export type {
 
 export {
     convertDesktop,
+    diffDesktopCaptures,
     FixtureBackend,
     WindowsUiaBackend,
     MacosAxapiBackend,
@@ -230,11 +231,17 @@ export type {
     DesktopCaptureBackend,
     CaptureDesktopOptions,
     DesktopCapture,
+    DesktopConversionResult,
+    DesktopDiff,
     DesktopElement,
+    DesktopElementChange,
+    DesktopElementSummary,
     DesktopRole,
     DesktopTarget,
     ExecuteDesktopOptions,
     ExecuteDesktopAction,
+    ExecuteDesktopBatchOptions,
+    ExecuteDesktopBatchResult,
     ExecuteDesktopResult,
     KeyModifier,
 } from './desktop'

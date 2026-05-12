@@ -77,7 +77,19 @@ export interface ConvertDesktopOptions {
     vendorExtensions?: Record<string, unknown>
 }
 
-export async function convertDesktop(options: ConvertDesktopOptions): Promise<ConversionResult> {
+/**
+ * Desktop-specific extension of `ConversionResult` that also exposes the
+ * raw `DesktopCapture` tree. Callers that want to diff snapshots or
+ * inspect the structured tree without re-parsing the AgentMark string
+ * read it off this field.
+ */
+export interface DesktopConversionResult extends ConversionResult {
+    /** The raw capture returned by the backend, before AgentMark
+     *  serialisation. Same object the binding refers into. */
+    capture: DesktopCapture
+}
+
+export async function convertDesktop(options: ConvertDesktopOptions): Promise<DesktopConversionResult> {
     const logger = options.logger ?? noopLogger
     const ttlMs = options.ttlMs ?? 15_000
 
@@ -167,7 +179,7 @@ export async function convertDesktop(options: ConvertDesktopOptions): Promise<Co
         bytes: text.length,
     })
 
-    return { agentmark: text, binding }
+    return { agentmark: text, binding, capture }
 }
 
 function synthesiseDesktopUrl(capture: DesktopCapture): string {

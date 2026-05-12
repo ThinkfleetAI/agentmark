@@ -3,7 +3,14 @@
  */
 
 export { convertDesktop } from './desktop-converter'
-export type { ConvertDesktopOptions } from './desktop-converter'
+export type { ConvertDesktopOptions, DesktopConversionResult } from './desktop-converter'
+
+export { diffDesktopCaptures } from './diff'
+export type {
+    DesktopDiff,
+    DesktopElementChange,
+    DesktopElementSummary,
+} from './diff'
 
 export { FixtureBackend } from './fixture-backend'
 export type { FixtureBackendOptions } from './fixture-backend'
@@ -23,6 +30,8 @@ export type {
     DesktopTarget,
     ExecuteDesktopOptions,
     ExecuteDesktopAction,
+    ExecuteDesktopBatchOptions,
+    ExecuteDesktopBatchResult,
     ExecuteDesktopResult,
     KeyModifier,
 } from './types'
