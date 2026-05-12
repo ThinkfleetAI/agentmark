@@ -34,6 +34,19 @@ export { createPdfPlugin, type PdfPlugin } from './plugins/pdf'
 export { createDesktopPlugin, type DesktopPlugin } from './plugins/desktop'
 export { createMetaPlugin } from './plugins/meta'
 
+// Foundations Pack — OS-basics plugin (app launcher, clipboard, allowlisted
+// filesystem, durable state K/V). Opt-in.
+export {
+    createFoundationsPlugin,
+    FilesGuard,
+    StateStore,
+    FOUNDATIONS_TOOLS,
+    runApp,
+    readClipboardText,
+    writeClipboardText,
+} from '../plugins/foundations'
+export type { FoundationsPluginConfig } from '../plugins/foundations'
+
 // Microsoft Workflows Pack (Graph-only v0) — opt-in; not part of the
 // default plugin set. Pass it explicitly via `createMcpServer({ plugins })`.
 export {
