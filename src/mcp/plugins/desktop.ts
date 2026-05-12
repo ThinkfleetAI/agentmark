@@ -5,14 +5,17 @@
  * owns its own DesktopSession map.
  */
 import {
+    computeFingerprint,
     convertDesktop,
     diffDesktopCaptures,
+    findByFingerprint,
     FixtureBackend,
     MacosAxapiBackend,
     WindowsUiaBackend,
     parseSnapshot,
     type DesktopCaptureBackend,
     type DesktopTarget,
+    type ElementFingerprint,
     type ExecuteDesktopAction,
     type KeyModifier,
 } from '../../index'
@@ -239,6 +242,54 @@ const DESKTOP_TOOLS: McpToolDef[] = [
             required: ['desktop_id', 'actions'],
         },
     },
+    {
+        name: 'agentmark_desktop_fingerprint',
+        description:
+            'Compute a structural fingerprint for an element in the current '
+            + 'snapshot. The fingerprint captures role + name + parent context + '
+            + 'adjacent siblings — stable across most UI changes that drift '
+            + 'native element IDs. Save fingerprints with your Recipes so '
+            + 'agentmark_desktop_find_by_fingerprint can recover when an '
+            + 'element_id goes stale.\n'
+            + '\nPass `action_id` to resolve via the snapshot binding, or '
+            + '`element_id` directly. Returns null when the target isn\'t in '
+            + 'the current snapshot.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                action_id: { type: 'string', description: 'Resolved via the snapshot binding (action_id → element_id).' },
+                element_id: { type: 'string', description: 'Raw backend element id, used when you have it directly.' },
+            },
+            required: ['desktop_id'],
+        },
+    },
+    {
+        name: 'agentmark_desktop_find_by_fingerprint',
+        description:
+            'Search the current snapshot for the element best matching a '
+            + 'previously-computed fingerprint. Returns the matched element_id '
+            + 'and a confidence score (0–100). Returns null when no candidate '
+            + 'clears the minimum score (default 60).\n'
+            + '\nScoring favours role+name matches; full sibling + parent '
+            + 'context pushes scores toward 100. Use for Recipe replay when '
+            + 'a saved element_id no longer resolves.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                desktop_id: { type: 'string' },
+                fingerprint: {
+                    type: 'object',
+                    description: 'Output of agentmark_desktop_fingerprint.',
+                },
+                min_score: {
+                    type: 'number',
+                    description: 'Minimum confidence (0–100). Default: 60.',
+                },
+            },
+            required: ['desktop_id', 'fingerprint'],
+        },
+    },
 ]
 
 export interface DesktopPlugin extends AgentMarkPlugin {
@@ -349,6 +400,80 @@ export function createDesktopPlugin(): DesktopPlugin {
             )
 
             return { text: agentmark }
+        },
+
+        agentmark_desktop_fingerprint: async (args): Promise<DispatchResult> => {
+            const id = requireString(args, 'desktop_id')
+            const session = requireDesktop(id)
+
+            if (!session.lastCapture) {
+                return {
+                    text:
+                        `No cached capture for desktop_id ${id}. Call `
+                        + `agentmark_desktop_snapshot first.`,
+                    isError: true,
+                }
+            }
+
+            // Resolve to a backend element_id. The action_id path is
+            // more agent-friendly (action ids appear in snapshots); the
+            // element_id path is for callers that already have the raw
+            // backend id.
+            let elementId: string | undefined
+            if (typeof args.action_id === 'string') {
+                if (!session.lastBinding) {
+                    return { text: `No snapshot binding; capture first.`, isError: true }
+                }
+                elementId = session.lastBinding.get(args.action_id)
+                if (!elementId) {
+                    return { text: `Unknown action_id: ${args.action_id}`, isError: true }
+                }
+            } else if (typeof args.element_id === 'string') {
+                elementId = args.element_id
+            } else {
+                return { text: '`action_id` or `element_id` is required.', isError: true }
+            }
+
+            const fingerprint = computeFingerprint(session.lastCapture, elementId)
+            if (!fingerprint) {
+                return {
+                    text: JSON.stringify({ found: false, element_id: elementId }, null, 2),
+                    isError: true,
+                }
+            }
+            return { text: JSON.stringify({ found: true, element_id: elementId, fingerprint }, null, 2) }
+        },
+
+        agentmark_desktop_find_by_fingerprint: async (args): Promise<DispatchResult> => {
+            const id = requireString(args, 'desktop_id')
+            const session = requireDesktop(id)
+
+            if (!session.lastCapture) {
+                return {
+                    text:
+                        `No cached capture for desktop_id ${id}. Call `
+                        + `agentmark_desktop_snapshot first.`,
+                    isError: true,
+                }
+            }
+
+            if (!args.fingerprint || typeof args.fingerprint !== 'object') {
+                return { text: '`fingerprint` must be an object.', isError: true }
+            }
+            const fp = args.fingerprint as ElementFingerprint
+            if (typeof fp.role !== 'string') {
+                return { text: '`fingerprint.role` is required.', isError: true }
+            }
+            const minScore = typeof args.min_score === 'number' ? args.min_score : 60
+
+            const match = findByFingerprint(session.lastCapture, fp, { minScore })
+            if (!match) {
+                return {
+                    text: JSON.stringify({ found: false, min_score: minScore }, null, 2),
+                    isError: true,
+                }
+            }
+            return { text: JSON.stringify({ found: true, ...match }, null, 2) }
         },
 
         agentmark_desktop_diff: async (args): Promise<DispatchResult> => {
