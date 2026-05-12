@@ -193,6 +193,92 @@ describe('MCP — desktop tools', () => {
         expect(exec.text).toContain('No cached snapshot')
     })
 
+    it('agentmark_desktop_execute_batch runs a sequence of actions in one dispatch', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const batch = await dispatch(state, 'agentmark_desktop_execute_batch', {
+            desktop_id,
+            actions: [
+                { action_id: 'act_in_company', value: 'Beta Industries' },
+                { action_id: 'act_in_phone', value: '555-0100' },
+            ],
+        })
+        expect(batch.isError).toBeFalsy()
+        const body = JSON.parse(batch.text)
+        expect(body.all_ok).toBe(true)
+        expect(body.executed_count).toBe(2)
+        expect(body.requested_count).toBe(2)
+        expect(body.results[0]).toMatchObject({ action_id: 'act_in_company', ok: true, new_value: 'Beta Industries' })
+        expect(body.results[1]).toMatchObject({ action_id: 'act_in_phone', ok: true, new_value: '555-0100' })
+
+        // Re-snapshot to confirm both values landed.
+        const after = await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+        const snap = parseSnapshot(after.text)
+        expect(snap.actions?.act_in_company?.value).toBe('Beta Industries')
+        expect(snap.actions?.act_in_phone?.value).toBe('555-0100')
+    })
+
+    it('agentmark_desktop_execute_batch fails fast on unknown action_id before dispatching anything', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        await dispatch(state, 'agentmark_desktop_snapshot', {
+            desktop_id,
+            target: { window_id: 'nowcerts_customer' },
+        })
+
+        const batch = await dispatch(state, 'agentmark_desktop_execute_batch', {
+            desktop_id,
+            actions: [
+                { action_id: 'act_in_company', value: 'OK' },
+                { action_id: 'act_bogus_id', value: 'fails' },
+            ],
+        })
+        expect(batch.isError).toBe(true)
+        expect(batch.text).toContain('Unknown action_id at index 1')
+
+        // Crucially: the fixture backend should NOT have received any execute
+        // call — fail-fast happens *before* the backend is touched. That's
+        // what makes the batch tool safe for ordered workflows.
+        const desktop = state.desktops.get(desktop_id)!
+        const backend = desktop.backend as unknown as { executed: unknown[] }
+        expect(backend.executed.length).toBe(0)
+    })
+
+    it('agentmark_desktop_execute_batch rejects an empty actions array', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+        await dispatch(state, 'agentmark_desktop_snapshot', { desktop_id })
+
+        const batch = await dispatch(state, 'agentmark_desktop_execute_batch', {
+            desktop_id,
+            actions: [],
+        })
+        expect(batch.isError).toBe(true)
+        expect(batch.text).toMatch(/non-empty array/i)
+    })
+
+    it('agentmark_desktop_execute_batch errors when no snapshot has been captured yet', async () => {
+        const open = await dispatch(state, 'agentmark_desktop_open', {})
+        const { desktop_id } = JSON.parse(open.text)
+
+        const batch = await dispatch(state, 'agentmark_desktop_execute_batch', {
+            desktop_id,
+            actions: [{ action_id: 'act_anything' }],
+        })
+        expect(batch.isError).toBe(true)
+        expect(batch.text).toContain('No cached snapshot')
+    })
+
     it('agentmark_desktop_close removes the session', async () => {
         const open = await dispatch(state, 'agentmark_desktop_open', {})
         const { desktop_id } = JSON.parse(open.text)

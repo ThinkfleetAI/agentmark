@@ -35,6 +35,13 @@ export interface DesktopCaptureBackend {
      *  is identified by `element_id` which comes from the capture tree. */
     execute(opts: ExecuteDesktopOptions): Promise<ExecuteDesktopResult>
 
+    /** Execute a sequence of actions in one round-trip. Bridges that
+     *  implement this natively run the entire batch inside the sidecar
+     *  process; the default fallback below calls `execute()` in a loop
+     *  (still saves the MCP dispatch overhead but pays N stdio round-trips
+     *  to the bridge). */
+    executeBatch?(opts: ExecuteDesktopBatchOptions): Promise<ExecuteDesktopBatchResult>
+
     /** Optional teardown — release native handles, close sidecar process. */
     close?(): Promise<void>
 }
@@ -230,4 +237,41 @@ export interface ExecuteDesktopResult {
      *  cheaply re-query it. Lets the agent confirm state without a full
      *  re-capture. */
     new_value?: string
+}
+
+/**
+ * Batched execution — run N actions in one MCP / bridge round-trip.
+ *
+ * Designed for bulk-input workflows ("fill 1000 form fields", "write 10k
+ * Excel cells") where the per-call dispatch overhead dominates the
+ * actual SetValue/Click work. Bridges that implement this natively run
+ * the whole array inside their sidecar; the dispatcher's default loop
+ * fallback still wins by avoiding the MCP round-trips.
+ */
+export interface ExecuteDesktopBatchOptions {
+    /** Which window the actions target. Same semantics as `execute()`. */
+    target?: DesktopTarget
+    /** Sequence of actions to run. Executed in array order. */
+    actions: ReadonlyArray<ExecuteDesktopAction>
+    /**
+     * What to do on failure of any single action:
+     *   - 'stop' (default): abort the remainder, return results so far
+     *      plus an error result for the failure.
+     *   - 'continue': keep running, return one result per action.
+     */
+    on_error?: 'stop' | 'continue'
+    /** Per-batch timeout (ms). Default: max(5000, 50 * actions.length). */
+    timeoutMs?: number
+}
+
+export interface ExecuteDesktopBatchResult {
+    /** One result per attempted action, in input order. Length may be
+     *  less than `actions.length` when `on_error: 'stop'` and a failure
+     *  occurred before the end. */
+    results: ReadonlyArray<ExecuteDesktopResult>
+    /** Aggregate flag: true when every result has `ok: true`. */
+    all_ok: boolean
+    /** Number of actions that ran (including the failing one when
+     *  on_error: 'stop'). */
+    executed_count: number
 }
