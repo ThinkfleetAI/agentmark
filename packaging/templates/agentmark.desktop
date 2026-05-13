@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ThinkFleet AgentMark
+GenericName=MCP Server
+Comment=Model Context Protocol server for AgentMark
+Exec=agentmark-mcp
+Icon=agentmark
+Categories=Development;
+Terminal=true
+Version=__VERSION__
