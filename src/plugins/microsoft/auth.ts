@@ -15,8 +15,32 @@ import { mkdir, readFile, writeFile, chmod, unlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-/** Default Azure AD client ID. Override via AGENTMARK_MS_CLIENT_ID. */
-const DEFAULT_CLIENT_ID = process.env.AGENTMARK_MS_CLIENT_ID ?? ''
+/**
+ * ThinkFleet's public Azure AD client id (multi-tenant).
+ *
+ * Filled in once the Azure AD app is registered under the ThinkFleet
+ * tenant. Until then the env var / explicit config still works — this
+ * just makes `createMicrosoftPlugin()` zero-config for end users
+ * running the bundled installer (no Azure portal trip required).
+ *
+ * Registration parameters when filling this in:
+ *   - Account types: "Accounts in any organizational directory and
+ *     personal Microsoft accounts"
+ *   - Allow public client flows: Yes (required for device-code OAuth)
+ *   - API permissions (delegated):
+ *       Mail.Send, Mail.ReadWrite, Files.ReadWrite,
+ *       offline_access, User.Read
+ *
+ * NEVER hardcode a tenant-specific client id here. The default must be
+ * multi-tenant or zero-config falls apart for users on other tenants.
+ */
+const THINKFLEET_DEFAULT_CLIENT_ID = ''
+
+/** Resolves the client ID from (in priority order): explicit config,
+ *  AGENTMARK_MS_CLIENT_ID env var, the baked-in ThinkFleet default. */
+const DEFAULT_CLIENT_ID =
+    process.env.AGENTMARK_MS_CLIENT_ID ??
+    THINKFLEET_DEFAULT_CLIENT_ID
 
 /** The "common" tenant accepts personal + work/school Microsoft accounts. */
 const TENANT = 'common'
@@ -238,9 +262,20 @@ export class MicrosoftAuth {
     private requireClientId(): void {
         if (!this.clientId) {
             throw new Error(
-                'Microsoft Graph client ID is not set. '
-                + 'Register an Azure AD app and pass `clientId` to createMicrosoftPlugin() '
-                + 'or set the AGENTMARK_MS_CLIENT_ID environment variable.',
+                'Microsoft Graph client ID is not set.\n\n'
+                + 'One-time setup:\n'
+                + '  1. Open https://entra.microsoft.com → App registrations → New registration\n'
+                + '  2. Account types: "Accounts in any organizational directory '
+                + 'and personal Microsoft accounts"\n'
+                + '  3. Authentication → Advanced settings → '
+                + '"Allow public client flows" → Yes\n'
+                + '  4. API permissions → Add → Microsoft Graph → Delegated:\n'
+                + '     Mail.Send, Mail.ReadWrite, Files.ReadWrite, '
+                + 'offline_access, User.Read\n'
+                + '  5. Grant admin consent\n\n'
+                + 'Then either:\n'
+                + '  - Set AGENTMARK_MS_CLIENT_ID=<your-app-id> in your environment, OR\n'
+                + '  - Pass `clientId: "<your-app-id>"` to createMicrosoftPlugin()\n',
             )
         }
     }
