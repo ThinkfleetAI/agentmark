@@ -131,6 +131,9 @@ export type {
 // the live ThinkFleet agent-memory API).
 export {
     createMemoryPlugin,
+    detectMemoryBackend,
+    describeMemoryBackend,
+    MemoryBackendConfigError,
     LocalFileMemoryBackend,
     ActivepiecesMemoryBackend,
     ActivepiecesMemoryError,
