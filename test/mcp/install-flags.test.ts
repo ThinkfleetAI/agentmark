@@ -136,6 +136,35 @@ describe('parseFlags — --env', () => {
     })
 })
 
+describe('parseFlags — --skill', () => {
+    it('returns skill undefined when no --skill flag is passed', () => {
+        expect(parseFlags(['--client=cursor']).skill).toBeUndefined()
+    })
+
+    it('captures a single --skill name', () => {
+        expect(parseFlags(['--skill=thinkfleet-memory']).skill).toEqual(['thinkfleet-memory'])
+    })
+
+    it('deduplicates repeated --skill flags', () => {
+        const flags = parseFlags(['--skill=thinkfleet-memory', '--skill=thinkfleet-memory'])
+        expect(flags.skill).toEqual(['thinkfleet-memory'])
+    })
+
+    it('captures multiple distinct skills in order', () => {
+        expect(parseFlags(['--skill=alpha', '--skill=beta']).skill).toEqual(['alpha', 'beta'])
+    })
+
+    it('rejects uppercase / special characters in skill name', () => {
+        expect(() => parseFlags(['--skill=Bad_Name'])).toThrowError(/is invalid/)
+        expect(() => parseFlags(['--skill=name with space'])).toThrowError(/is invalid/)
+        expect(() => parseFlags(['--skill=../escape'])).toThrowError(/is invalid/)
+    })
+
+    it('rejects skill name starting with a hyphen', () => {
+        expect(() => parseFlags(['--skill=-leading-hyphen'])).toThrowError(/is invalid/)
+    })
+})
+
 describe('buildEntryFromFlags', () => {
     it('uses the default command when --command is absent', () => {
         const flags = parseFlags([])
