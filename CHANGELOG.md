@@ -5,6 +5,134 @@ All notable changes to `@thinkfleet/agentmark` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-05-15
+
+The **ThinkFleet Memory Bridge** release. Makes the Memory Pack a
+zero-config default and turns `agentmark-mcp install` into a one-shot
+that wires creds + a teaching skill into every AI client it touches.
+Designed for ThinkFleet Desktop to drive — the result is that an
+end user signs in once and every installed AI tool (Claude Code,
+Cursor, Codex, Windsurf, Claude Desktop) gains persistent hierarchical
+memory across sessions with no prompt rituals.
+
+### Added
+
+- **Memory plugin in the default plugin set.** `createDispatcherState()`
+  now always builds the memory plugin and registers it alongside web +
+  pdf + desktop. Backend chosen automatically by `detectMemoryBackend()`
+  — see below. Backwards-compatible: callers passing an explicit
+  `plugins` array to `createMcpServer()` see no change.
+
+- **`detectMemoryBackend()` — env-aware backend selection.** Cascading
+  rule:
+  - All three of `THINKFLEET_BASE_URL` + `THINKFLEET_PROJECT_ID` +
+    `THINKFLEET_API_KEY` present → `ActivepiecesMemoryBackend` (memory
+    flows to the configured ThinkFleet workspace; available across
+    machines + AI tools).
+  - None present → `LocalFileMemoryBackend` (the legacy default,
+    on-disk, offline-safe).
+  - Some-but-not-all present → throws `MemoryBackendConfigError`.
+    Refusing to silently fall back to local on partial creds matters:
+    a typo in one variable shouldn't quietly demote a user from
+    "memory syncs to my team" to "memory only on my disk."
+  - Malformed API key (no `sk-` prefix) → throws; truncated to first
+    4 chars in the error so secrets don't leak into logs.
+
+  `THINKFLEET_CHATBOT_ID` is plumbed through when present for
+  chatbot-scoped memory routes.
+
+- **`describeMemoryBackend()` + `MemoryBackendConfigError`** — public
+  exports so embedders can render a credential-free description of the
+  active backend and discriminate config-time failures from runtime
+  errors.
+
+- **`agentmark-mcp install --env=KEY=VALUE`** — repeatable flag that
+  writes the env block into each AI client's MCP config. The natural
+  transport for `THINKFLEET_*` creds without forcing every user to
+  edit JSON by hand.
+
+  Validation (all of these *throw* rather than silently mangle):
+  - Key must match `^[A-Za-z_][A-Za-z0-9_]*$` — rejects shell
+    metacharacters that a launcher might interpret.
+  - Value capped at 4 KiB — prevents config bombs.
+  - Null bytes rejected.
+  - Duplicate keys: stderr warning, last value wins. The warning
+    contains the key name but **never** the values.
+
+- **`agentmark-mcp install --skill=<name>`** — repeatable flag that
+  installs a skill file alongside the MCP entry. Skills are
+  instruction packets AI tools load automatically at session start;
+  they teach the agent *when* and *how* to use the tools, without
+  which the model often has tools available but doesn't know to call
+  them.
+
+  - **Native-skill targets**: Claude Code (`~/.claude/skills/<name>/skill.md`)
+    and Claude Desktop (`~/Library/Application Support/Claude/skills/...`).
+  - **Marker-block targets** (Cursor `.cursorrules`, Windsurf
+    `.windsurfrules`, Codex CLI `AGENTS.md`): scaffolded via
+    `upsertManagedBlock` — surgical replacement of a marker-wrapped
+    section that preserves any user-authored rules around it. Not in
+    the default target list yet; lands in a follow-up after per-tool
+    rules-file location research.
+  - Skill name validation: `^[a-z0-9][a-z0-9-]*$` — rejects
+    path-traversal (`../escape`) and shell-relevant chars.
+  - Atomic write (temp + rename, `0644`). Idempotent: same content
+    → `already_present`, different → `updated`, missing → `added`.
+
+- **Canonical `thinkfleet-memory` skill** ships with the package.
+  Tells the agent to:
+  - Call `agentmark_memory_search` at session start to load project
+    context.
+  - Save user preferences / project facts / decisions without being
+    asked.
+  - Search memory before guessing about the user's environment.
+  - Pick the right scope (platform / user / project / agent / session).
+  - Recognise failure modes; avoid pitfalls (don't dump every memory
+    at the user, don't save secrets, don't overwrite user-scope with
+    session-scope writes).
+
+### Changed
+
+- The MCP server's stderr now logs the selected memory backend at
+  startup (`[agentmark] memory backend: …`). Credential-free,
+  surfaces in MCP-client diagnostics so configuration issues are
+  visible without enabling debug logging.
+- On a misconfigured `THINKFLEET_*` env (partial creds, malformed key)
+  the memory plugin is disabled with a clear stderr message; the rest
+  of the MCP server stays alive. The disabled state surfaces to the
+  AI tool as "tool not found" if it tries to call a memory tool, which
+  combined with the stderr is the loud-failure signal we want.
+
+### Security
+
+- API tokens never appear in:
+  - The selected-backend log line.
+  - `describeMemoryBackend()` output.
+  - Any error message thrown by `detectMemoryBackend()` (malformed key
+    is truncated to first 4 chars).
+  - Duplicate-`--env` warnings from the install CLI.
+- The `--env` value is documented as on-disk inside the client's MCP
+  config file (e.g. `~/.cursor/mcp.json`). Designed to be paired
+  with an OS-keychain caller (ThinkFleet Desktop reads tokens from
+  Electron `safeStorage` and passes them at install time only).
+
+### Internal
+
+- `parseFlags` / `parseEnvFlag` / `buildEntryFromFlags` extracted from
+  `src/mcp/cli.ts` to `src/mcp/install/flags.ts` so tests can exercise
+  the parser without spawning the MCP server.
+- New tests:
+  - `test/memory/detect-backend.test.ts` (16 cases): cascade branches,
+    error sanitization, whitespace handling, `chatbotId` plumbing,
+    secret-safe error messages.
+  - `test/mcp/default-memory-plugin.test.ts` (5 cases): memory plugin
+    in default set, startup log, partial-creds disables cleanly.
+  - `test/mcp/install-flags.test.ts` (28 cases): `--env` and `--skill`
+    parsing + validation.
+  - `test/mcp/install-skills.test.ts` (16 cases): `upsertManagedBlock`
+    purity, end-to-end installer with fake targets, skill catalog.
+  - Suite: **586 passed, 10 skipped** (596 total).
+
 ## [0.7.0] — 2026-05-10
 
 MCP server. The entire AgentMark library is now drivable from any MCP
