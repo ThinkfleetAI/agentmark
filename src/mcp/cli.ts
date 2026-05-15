@@ -22,6 +22,13 @@ import {
     allClients,
     type McpServerEntry,
 } from './install'
+import {
+    parseFlags,
+    buildEntryFromFlags,
+    type ParsedFlags,
+} from './install/flags'
+import { installSkill, type SkillInstallResult } from './install/skills'
+import { getSkillContent } from './skills/thinkfleet-memory'
 
 const HELP = `agentmark-mcp — Model Context Protocol server for AgentMark
 
@@ -47,7 +54,27 @@ OPTIONS (install / setup / uninstall)
                     Known: ${allClients().map((c) => c.id).join(', ')}
   --name=<name>     Entry name to register under (default: agentmark)
   --command=<path>  Absolute command path to register (default: auto-detected)
+  --env=KEY=VALUE   Add an env var that the client launches the MCP server
+                    with. Repeatable. Used to wire THINKFLEET_* credentials
+                    so the memory plugin talks to your ThinkFleet workspace
+                    instead of the on-disk default backend.
+
+                    Security note: the value is written into the client's
+                    MCP config file on disk. Prefer rotating secrets from
+                    an OS keychain (ThinkFleet Desktop does this) rather
+                    than passing long-lived keys on a shared machine.
+  --skill=<name>    Also install a skill that teaches the agent when /
+                    how to use the tools you just wired. Repeatable.
+                    Known: thinkfleet-memory. Native-skill clients get a
+                    skill.md file; rules-file clients get a marker block.
   --dry-run         Show what would change without writing
+
+EXAMPLE — wire Claude Code to ThinkFleet memory + install skill:
+  agentmark-mcp install --client=claude-code \\
+      --env=THINKFLEET_BASE_URL=https://app.thinkfleet.ai \\
+      --env=THINKFLEET_PROJECT_ID=proj_xxx \\
+      --env=THINKFLEET_API_KEY=sk-xxx \\
+      --skill=thinkfleet-memory
 `
 
 async function main(argv: string[]): Promise<number> {
@@ -80,7 +107,7 @@ async function main(argv: string[]): Promise<number> {
 
 async function runInstall(args: string[]): Promise<number> {
     const flags = parseFlags(args)
-    const entry = buildEntryFromFlags(flags)
+    const entry = entryForCli(flags)
     const result = await installToClients({
         clientIds: flags.client,
         entry,
@@ -88,7 +115,34 @@ async function runInstall(args: string[]): Promise<number> {
         dryRun: flags.dryRun,
     })
     printInstallResult(result, flags.dryRun ? 'dry-run' : 'install')
-    return result.clients.every((r) => r.action !== 'error') ? 0 : 1
+
+    // After the MCP entry is wired, optionally install skill files
+    // that teach the agent when/how to use those tools. Opt-in via
+    // `--skill=<name>` so callers who only want the MCP wiring
+    // (and not opinions injected into their agent prompts) can
+    // still install just the server entry.
+    let skillsOk = true
+    if (flags.skill && flags.skill.length > 0) {
+        for (const name of flags.skill) {
+            const skill = getSkillContent(name)
+            if (!skill) {
+                process.stderr.write(`Unknown skill: ${name}. Skipping.\n`)
+                skillsOk = false
+                continue
+            }
+            const skillResult = await installSkill({
+                skillName: name,
+                content: skill.content,
+                clientIds: flags.client,
+                dryRun: flags.dryRun,
+            })
+            printSkillResult(name, skillResult, flags.dryRun ? 'dry-run' : 'install')
+            if (!skillResult.ok) skillsOk = false
+        }
+    }
+
+    const installOk = result.clients.every((r) => r.action !== 'error')
+    return installOk && skillsOk ? 0 : 1
 }
 
 async function runUninstall(args: string[]): Promise<number> {
@@ -115,39 +169,8 @@ async function runDoctor(): Promise<number> {
     return 0
 }
 
-interface ParsedFlags {
-    client: string[] | undefined
-    name: string[] | undefined
-    command: string[] | undefined
-    dryRun: boolean
-}
-
-function parseFlags(args: string[]): ParsedFlags {
-    const client: string[] = []
-    const name: string[] = []
-    const command: string[] = []
-    let dryRun = false
-    for (const arg of args) {
-        if (arg === '--dry-run' || arg === '-n') { dryRun = true; continue }
-        const m = arg.match(/^--(client|name|command)(?:=(.*))?$/)
-        if (!m) continue
-        const value = m[2]
-        if (value === undefined) continue
-        if (m[1] === 'client') value.split(',').filter(Boolean).forEach((v) => client.push(v.trim()))
-        if (m[1] === 'name') name.push(value)
-        if (m[1] === 'command') command.push(value)
-    }
-    return {
-        client: client.length > 0 ? client : undefined,
-        name: name.length > 0 ? name : undefined,
-        command: command.length > 0 ? command : undefined,
-        dryRun,
-    }
-}
-
-function buildEntryFromFlags(flags: ParsedFlags): McpServerEntry {
-    const command = flags.command?.[0] ?? defaultCommand()
-    return { command, args: [] }
+function entryForCli(flags: ParsedFlags): McpServerEntry {
+    return buildEntryFromFlags(flags, { command: defaultCommand() })
 }
 
 /**
@@ -192,6 +215,21 @@ function pkgVersion(): string {
     } catch {
         return '0.0.0'
     }
+}
+
+function printSkillResult(skillName: string, result: SkillInstallResult, label: string): void {
+    process.stdout.write(`agentmark-mcp ${label} — skill "${skillName}":\n\n`)
+    for (const c of result.clients) {
+        const flag =
+            c.action === 'added' || c.action === 'updated' ? '✓'
+                : c.action === 'already_present' ? '·'
+                    : c.action === 'skipped' ? '⏭'
+                        : '✗'
+        const padded = `${c.clientName} [${c.action}]`.padEnd(40)
+        process.stdout.write(`  ${flag}  ${padded}  ${c.path}\n`)
+        if (c.message) process.stdout.write(`     ${c.message}\n`)
+    }
+    process.stdout.write('\n')
 }
 
 function printInstallResult(result: { clients: Array<{ id: string; name: string; path: string; action: string; message?: string }> }, label: string): void {
