@@ -129,6 +129,37 @@ describe('Fake client end-to-end — apply + remove', () => {
         expect(written).toEqual({ mcpServers: { agentmark: ENTRY } })
     })
 
+    it('writes the env block when the entry carries env vars', async () => {
+        const client = fakeClient('test-a-env', 'a-env.json')
+        const envEntry: McpServerEntry = {
+            command: '/opt/thinkfleet/agentmark/bin/agentmark-mcp',
+            args: [],
+            env: {
+                THINKFLEET_BASE_URL: 'https://app.thinkfleet.ai',
+                THINKFLEET_PROJECT_ID: 'proj_test',
+                THINKFLEET_API_KEY: 'sk-test-token',
+            },
+        }
+        await applyToFake(client, envEntry)
+        const written = JSON.parse(await readFile(client.configPath()!, 'utf8'))
+        expect(written.mcpServers.agentmark.env).toEqual(envEntry.env)
+    })
+
+    it('updates the env block when the install is re-run with new values', async () => {
+        const client = fakeClient('test-a-rotate', 'a-rotate.json')
+        await applyToFake(client, {
+            command: '/x', args: [],
+            env: { THINKFLEET_API_KEY: 'sk-old' },
+        })
+        const second = await applyToFake(client, {
+            command: '/x', args: [],
+            env: { THINKFLEET_API_KEY: 'sk-new' },
+        })
+        expect(second.action).toBe('updated')
+        const written = JSON.parse(await readFile(client.configPath()!, 'utf8'))
+        expect(written.mcpServers.agentmark.env.THINKFLEET_API_KEY).toBe('sk-new')
+    })
+
     it('preserves unrelated keys (mcp + other) in the config', async () => {
         const client = fakeClient('test-b', 'b.json')
         await writeJson(client.configPath()!, {
