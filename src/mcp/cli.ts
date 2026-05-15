@@ -22,6 +22,11 @@ import {
     allClients,
     type McpServerEntry,
 } from './install'
+import {
+    parseFlags,
+    buildEntryFromFlags,
+    type ParsedFlags,
+} from './install/flags'
 
 const HELP = `agentmark-mcp — Model Context Protocol server for AgentMark
 
@@ -47,7 +52,22 @@ OPTIONS (install / setup / uninstall)
                     Known: ${allClients().map((c) => c.id).join(', ')}
   --name=<name>     Entry name to register under (default: agentmark)
   --command=<path>  Absolute command path to register (default: auto-detected)
+  --env=KEY=VALUE   Add an env var that the client launches the MCP server
+                    with. Repeatable. Used to wire THINKFLEET_* credentials
+                    so the memory plugin talks to your ThinkFleet workspace
+                    instead of the on-disk default backend.
+
+                    Security note: the value is written into the client's
+                    MCP config file on disk. Prefer rotating secrets from
+                    an OS keychain (ThinkFleet Desktop does this) rather
+                    than passing long-lived keys on a shared machine.
   --dry-run         Show what would change without writing
+
+EXAMPLE — wire Claude Code to ThinkFleet memory:
+  agentmark-mcp install --client=claude-code \\
+      --env=THINKFLEET_BASE_URL=https://app.thinkfleet.ai \\
+      --env=THINKFLEET_PROJECT_ID=proj_xxx \\
+      --env=THINKFLEET_API_KEY=sk-xxx
 `
 
 async function main(argv: string[]): Promise<number> {
@@ -80,7 +100,7 @@ async function main(argv: string[]): Promise<number> {
 
 async function runInstall(args: string[]): Promise<number> {
     const flags = parseFlags(args)
-    const entry = buildEntryFromFlags(flags)
+    const entry = entryForCli(flags)
     const result = await installToClients({
         clientIds: flags.client,
         entry,
@@ -115,39 +135,8 @@ async function runDoctor(): Promise<number> {
     return 0
 }
 
-interface ParsedFlags {
-    client: string[] | undefined
-    name: string[] | undefined
-    command: string[] | undefined
-    dryRun: boolean
-}
-
-function parseFlags(args: string[]): ParsedFlags {
-    const client: string[] = []
-    const name: string[] = []
-    const command: string[] = []
-    let dryRun = false
-    for (const arg of args) {
-        if (arg === '--dry-run' || arg === '-n') { dryRun = true; continue }
-        const m = arg.match(/^--(client|name|command)(?:=(.*))?$/)
-        if (!m) continue
-        const value = m[2]
-        if (value === undefined) continue
-        if (m[1] === 'client') value.split(',').filter(Boolean).forEach((v) => client.push(v.trim()))
-        if (m[1] === 'name') name.push(value)
-        if (m[1] === 'command') command.push(value)
-    }
-    return {
-        client: client.length > 0 ? client : undefined,
-        name: name.length > 0 ? name : undefined,
-        command: command.length > 0 ? command : undefined,
-        dryRun,
-    }
-}
-
-function buildEntryFromFlags(flags: ParsedFlags): McpServerEntry {
-    const command = flags.command?.[0] ?? defaultCommand()
-    return { command, args: [] }
+function entryForCli(flags: ParsedFlags): McpServerEntry {
+    return buildEntryFromFlags(flags, { command: defaultCommand() })
 }
 
 /**
