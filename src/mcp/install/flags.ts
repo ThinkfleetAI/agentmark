@@ -21,6 +21,8 @@ export interface ParsedFlags {
     /** When supplied, the resolved env map. Empty object means
      *  `--env` was used but every value parsed empty (still valid). */
     env: Record<string, string> | undefined
+    /** Skill names requested via `--skill=<name>`. Deduplicated. */
+    skill: string[] | undefined
     dryRun: boolean
 }
 
@@ -33,18 +35,23 @@ export interface ParsedFlags {
 const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 const ENV_VALUE_MAX_LEN = 4 * 1024
 
+/** Skill names — same shape as env-var keys, restricted to a sane
+ *  set so a malformed value can't be interpreted as a path on disk. */
+const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+
 export function parseFlags(args: string[], emit?: (line: string) => void): ParsedFlags {
     const client: string[] = []
     const name: string[] = []
     const command: string[] = []
     const env: Record<string, string> = {}
+    const skills = new Set<string>()
     let envSeen = false
     let dryRun = false
     const warn = emit ?? ((line: string) => process.stderr.write(`${line}\n`))
 
     for (const arg of args) {
         if (arg === '--dry-run' || arg === '-n') { dryRun = true; continue }
-        const m = arg.match(/^--(client|name|command|env)(?:=(.*))?$/)
+        const m = arg.match(/^--(client|name|command|env|skill)(?:=(.*))?$/)
         if (!m) continue
         const value = m[2]
         if (value === undefined) continue
@@ -59,6 +66,16 @@ export function parseFlags(args: string[], emit?: (line: string) => void): Parse
             env[key] = envValue
             envSeen = true
         }
+        if (m[1] === 'skill') {
+            const skillName = value.trim()
+            if (!SKILL_NAME_PATTERN.test(skillName)) {
+                throw new Error(
+                    `--skill name "${skillName}" is invalid. Must match `
+                    + '[a-z0-9][a-z0-9-]* (lowercase letters / digits / hyphens).',
+                )
+            }
+            skills.add(skillName)
+        }
     }
 
     return {
@@ -66,6 +83,7 @@ export function parseFlags(args: string[], emit?: (line: string) => void): Parse
         name: name.length > 0 ? name : undefined,
         command: command.length > 0 ? command : undefined,
         env: envSeen ? env : undefined,
+        skill: skills.size > 0 ? Array.from(skills) : undefined,
         dryRun,
     }
 }
