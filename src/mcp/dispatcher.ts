@@ -17,6 +17,12 @@ import { createWebPlugin, type WebPlugin } from './plugins/web'
 import { createPdfPlugin, type PdfPlugin } from './plugins/pdf'
 import { createDesktopPlugin, type DesktopPlugin } from './plugins/desktop'
 import { createMetaPlugin } from './plugins/meta'
+import {
+    createMemoryPlugin,
+    detectMemoryBackend,
+    describeMemoryBackend,
+    MemoryBackendConfigError,
+} from '../plugins/memory'
 import type { BrowserSession, DesktopSession, PdfSession } from './types'
 import type { Page } from '../index'
 
@@ -41,16 +47,32 @@ export interface DispatcherState {
 }
 
 /**
- * Build the default first-party plugin set (web + pdf + desktop + meta)
+ * Build the default first-party plugin set (web + pdf + desktop + memory + meta)
  * and return a `DispatcherState` that exposes both the new dispatcher
  * and the legacy per-capability maps.
+ *
+ * Memory plugin notes:
+ * - Always included so AI tools have a stable `agentmark_memory_*` surface.
+ * - Backend chosen by `detectMemoryBackend()` — ActivepiecesMemoryBackend
+ *   when THINKFLEET_* env vars are present (memory syncs to SaaS),
+ *   LocalFileMemoryBackend otherwise (memory stays on disk).
+ * - Partial / malformed creds disable the memory plugin and log to
+ *   stderr rather than crashing the whole MCP server. MCP clients
+ *   (Claude Code, Cursor, …) surface those stderr lines so users see
+ *   the misconfiguration.
  */
 export function createDispatcherState(): DispatcherState {
     const web: WebPlugin = createWebPlugin()
     const pdf: PdfPlugin = createPdfPlugin()
     const desktop: DesktopPlugin = createDesktopPlugin()
-    const meta = createMetaPlugin([web, pdf, desktop])
-    const plugins: AgentMarkPlugin[] = [web, pdf, desktop, meta]
+
+    const memory = tryBuildMemoryPlugin()
+
+    const featurePlugins: AgentMarkPlugin[] = [web, pdf, desktop]
+    if (memory) featurePlugins.push(memory)
+
+    const meta = createMetaPlugin(featurePlugins)
+    const plugins: AgentMarkPlugin[] = [...featurePlugins, meta]
     const dispatcher = new Dispatcher(plugins)
 
     return {
@@ -60,6 +82,30 @@ export function createDispatcherState(): DispatcherState {
         desktops: desktop.desktops,
         dispatcher,
         plugins,
+    }
+}
+
+/**
+ * Construct the memory plugin with an env-detected backend. Returns
+ * `null` when the env is misconfigured — keeps the rest of the MCP
+ * server alive but disables memory tools until the user fixes the
+ * config.
+ */
+function tryBuildMemoryPlugin(): AgentMarkPlugin | null {
+    try {
+        const backend = detectMemoryBackend()
+        // eslint-disable-next-line no-console
+        console.error(
+            `[agentmark] memory backend: ${describeMemoryBackend(backend)}`,
+        )
+        return createMemoryPlugin({ backend })
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        const tag = err instanceof MemoryBackendConfigError ? 'config' : 'init'
+        // eslint-disable-next-line no-console
+        console.error(`[agentmark] memory plugin disabled (${tag}): ${message}`)
+        return null
     }
 }
 

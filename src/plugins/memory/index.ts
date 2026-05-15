@@ -12,6 +12,7 @@
  * right place. agentmark_memory_get can walk the scope hierarchy in
  * one call.
  */
+import { ActivepiecesMemoryBackend } from './activepieces-backend'
 import { LocalFileMemoryBackend } from './store'
 import { MEMORY_TOOLS } from './tool-defs'
 import type { MemoryBackend } from './backend'
@@ -165,6 +166,116 @@ function optionalStringArray(v: unknown): string[] | undefined {
         throw new Error('Expected an array of strings.')
     }
     return v as string[]
+}
+
+/* ─── Env-aware backend detection ─────────────────────────────────────
+ *
+ * Lets the MCP server pick the right MemoryBackend automatically based
+ * on what's in the environment, without forcing every caller to know
+ * the construction recipe.
+ *
+ * Cascading rule:
+ *   - All three of THINKFLEET_BASE_URL + THINKFLEET_PROJECT_ID +
+ *     THINKFLEET_API_KEY present → ActivepiecesMemoryBackend (writes go
+ *     to the SaaS hierarchical memory; available across machines + AI
+ *     tools).
+ *   - None present → LocalFileMemoryBackend (on-disk, offline-safe,
+ *     same default the plugin has shipped with since v0.6).
+ *   - Some-but-not-all present → throw. Refusing to silently fall back
+ *     to local matters: a typo in one variable shouldn't quietly demote
+ *     a user from "memory syncs to my team" to "memory only on my disk."
+ *     Misconfiguration should be loud.
+ *
+ * Security note: the API key only ever lives in process env. Callers
+ * (e.g. ThinkFleet Desktop) should pass it from an OS keychain, not
+ * persist it in a plain settings file. The MCP install CLI's `--env`
+ * flag (β) is the supported transport into a client's MCP config.
+ */
+
+const ENV_BASE_URL = 'THINKFLEET_BASE_URL'
+const ENV_PROJECT_ID = 'THINKFLEET_PROJECT_ID'
+const ENV_API_KEY = 'THINKFLEET_API_KEY'
+const ENV_CHATBOT_ID = 'THINKFLEET_CHATBOT_ID'
+
+export class MemoryBackendConfigError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'MemoryBackendConfigError'
+    }
+}
+
+/**
+ * Select the right `MemoryBackend` for the current environment.
+ *
+ * @param env  Defaults to `process.env`. Pass a literal object in tests.
+ * @returns    `ActivepiecesMemoryBackend` when full THINKFLEET creds are
+ *             present, `LocalFileMemoryBackend` when none are.
+ * @throws     {@link MemoryBackendConfigError} when partial creds or a
+ *             malformed API key are detected.
+ */
+export function detectMemoryBackend(
+    env: NodeJS.ProcessEnv = process.env,
+): MemoryBackend {
+    const baseUrl = (env[ENV_BASE_URL] ?? '').trim()
+    const projectId = (env[ENV_PROJECT_ID] ?? '').trim()
+    const apiKey = (env[ENV_API_KEY] ?? '').trim()
+    const chatbotId = (env[ENV_CHATBOT_ID] ?? '').trim() || undefined
+
+    const present: string[] = []
+    const missing: string[] = []
+    for (const [name, value] of [
+        [ENV_BASE_URL, baseUrl],
+        [ENV_PROJECT_ID, projectId],
+        [ENV_API_KEY, apiKey],
+    ] as const) {
+        if (value.length > 0) present.push(name)
+        else missing.push(name)
+    }
+
+    if (present.length === 0) {
+        return new LocalFileMemoryBackend()
+    }
+
+    if (missing.length > 0) {
+        throw new MemoryBackendConfigError(
+            `Partial ThinkFleet credentials detected — found [${present.join(', ')}], `
+            + `missing [${missing.join(', ')}]. Set all three of ${ENV_BASE_URL}, `
+            + `${ENV_PROJECT_ID}, ${ENV_API_KEY} to use the SaaS memory backend, `
+            + 'or unset all three to use the local file backend.',
+        )
+    }
+
+    if (!apiKey.startsWith('sk-')) {
+        throw new MemoryBackendConfigError(
+            `${ENV_API_KEY} must start with "sk-" (got "${apiKey.slice(0, 4)}…"). `
+            + 'Generate a service-key from the ThinkFleet dashboard.',
+        )
+    }
+
+    return new ActivepiecesMemoryBackend({
+        baseUrl,
+        projectId,
+        apiKey,
+        chatbotId,
+    })
+}
+
+/**
+ * Human-readable label for a backend instance. Safe to log — never
+ * includes credentials. Used by the dispatcher to surface which
+ * backend got picked at startup.
+ */
+export function describeMemoryBackend(backend: MemoryBackend): string {
+    if (backend instanceof ActivepiecesMemoryBackend) {
+        const scope = backend.chatbotId
+            ? `project:${backend.projectId}/chatbot:${backend.chatbotId}`
+            : `project:${backend.projectId}`
+        return `activepieces (${scope} @ ${backend.baseUrl})`
+    }
+    if (backend instanceof LocalFileMemoryBackend) {
+        return 'local-file'
+    }
+    return backend.constructor.name
 }
 
 export { LocalFileMemoryBackend, MemoryStore } from './store'
