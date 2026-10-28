@@ -22,7 +22,7 @@ $ProgressPreference = 'SilentlyContinue'
 # ──────────────────────────────────────────────────────────────────────
 # Pinned versions
 # ──────────────────────────────────────────────────────────────────────
-$NodeVersion = if ($env:NODE_VERSION) { $env:NODE_VERSION } else { '22.11.0' }
+$NodeVersion = if ($env:NODE_VERSION) { $env:NODE_VERSION } else { '22.23.4' }
 $BundleId = if ($env:BUNDLE_ID) { $env:BUNDLE_ID } else { 'ai.thinkfleet.agentmark' }
 $DisplayName = if ($env:DISPLAY_NAME) { $env:DISPLAY_NAME } else { 'ThinkFleet AgentMark' }
 

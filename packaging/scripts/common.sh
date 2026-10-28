@@ -5,7 +5,7 @@
 
 # Pinned Node runtime. Bump when needed — every platform installer
 # downloads from the official Node.js distribution.
-NODE_VERSION="${NODE_VERSION:-22.11.0}"
+NODE_VERSION="${NODE_VERSION:-22.23.4}"
 
 # Bundle identifier (macOS) + Microsoft Product ID semantics (Windows).
 BUNDLE_ID="${BUNDLE_ID:-ai.thinkfleet.agentmark}"
