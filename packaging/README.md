@@ -98,7 +98,7 @@ in parallel and uploads artifacts to the GitHub Release. See
 
 | Component | Version | Where |
 |---|---|---|
-| Node | 22.11.0 (LTS) | `packaging/scripts/common.sh:NODE_VERSION` |
+| Node | 22.23.4 (LTS) | `packaging/scripts/common.sh:NODE_VERSION` |
 | .NET | 8.0 | bridge `csproj` |
 | Swift | 5.9+ | bridge `Package.swift` |
 | WiX | 4.x | installed via `dotnet tool install --global wix` in the workflow |
